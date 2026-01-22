@@ -1,0 +1,13 @@
+{
+  "dependencies": {
+    "@ag-grid-community/client-side-row-model": "^32.3.9",
+    "@ag-grid-community/core": "^32.3.9",
+    "axios": "^1.9.0",
+    "bullmq": "^5.58.5",
+    "firebase-admin": "^13.4.0",
+    "ioredis": "^5.7.0",
+    "lucide-react": "^0.544.0",
+    "react-data-table-component": "^7.7.0",
+    "redis": "^5.8.2"
+  }
+}
