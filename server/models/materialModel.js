@@ -10,8 +10,7 @@ const Material      = sequelize.define(
         },
         name: {
             type: DataTypes.STRING(255),
-            allowNull: false,
-            unique: true
+            allowNull: false
         },
         unit_id: {
             type: DataTypes.BIGINT,

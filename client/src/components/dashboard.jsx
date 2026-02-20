@@ -7,7 +7,6 @@ import { Building2, Wallet, TrendingUp, TrendingDown, RefreshCw, AlertCircle, In
 import { useTheme } from "../context/themeContext";
 import { ThemeUI } from "../context/themeUI";
 import axios from "../utils/axios"
-
 function Dashboard(){
 	const navigate  = useNavigate(); 
 	const { theme } = useTheme();
@@ -43,6 +42,10 @@ function Dashboard(){
 	const [gridApi, setGridApi] = useState(null);
 	const [materialGridApi, setMaterialGridApi] = useState(null);
 	const [labourGridApi, setLabourGridApi] = useState(null);
+	
+	// Transaction filters
+	const [transactionTypeFilter, setTransactionTypeFilter] = useState('');
+	const [transactionItemFilter, setTransactionItemFilter] = useState('');
 
 	// Counter configuration - Updated with new metrics
 	const counterConfig = [
@@ -303,6 +306,21 @@ function Dashboard(){
 		fetchAllData();
 	}, []);
 
+	// Update fromDate when site is selected
+	useEffect(() => {
+		if (selectedSite && sites.length > 0) {
+			const site = sites.find(s => s.id === selectedSite);
+			if (site && site.start_date) {
+				// Convert start_date to YYYY-MM-DD format
+				const startDate = new Date(site.start_date).toISOString().split('T')[0];
+				setFromDate(startDate);
+			}
+		} else if (!selectedSite) {
+			// Reset to 7 days ago when "All Sites" is selected
+			setFromDate(getSevenDaysAgo());
+		}
+	}, [selectedSite, sites]);
+
 	// Format number with commas
 	const formatNumber = (num) => {
 		if (num === null || num === undefined) return '0';
@@ -333,6 +351,15 @@ function Dashboard(){
 			return formatCurrency(value);
 		}
 		return formatNumber(value);
+	};
+
+	// Get font size class based on value length
+	const getValueFontSize = (value) => {
+		const valueStr = value?.toString() || '';
+		if (valueStr.length > 15) return 'text-xs';
+		if (valueStr.length > 12) return 'text-sm';
+		if (valueStr.length > 9) return 'text-base';
+		return 'text-lg';
 	};
 
 	// Get selected site name
@@ -385,7 +412,13 @@ function Dashboard(){
 			sortable: true,
 			width: 120,
 			valueFormatter: formatDateGrid,
-			sort: 'desc'
+			sort: 'desc',
+			cellStyle: (params) => {
+				if (params.node.rowPinned) {
+					return { fontWeight: 'bold', backgroundColor: '#f3f4f6' };
+				}
+				return null;
+			}
 		},
 		{
 			headerName: 'Type',
@@ -393,21 +426,39 @@ function Dashboard(){
 			filter: 'agSetColumnFilter',
 			sortable: true,
 			width: 110,
-			cellRenderer: TypeBadge
+			cellRenderer: TypeBadge,
+			cellStyle: (params) => {
+				if (params.node.rowPinned) {
+					return { fontWeight: 'bold', backgroundColor: '#f3f4f6' };
+				}
+				return null;
+			}
 		},
 		{
 			headerName: 'Site',
 			field: 'site_name',
 			filter: 'agTextColumnFilter',
 			sortable: true,
-			width: 160
+			width: 160,
+			cellStyle: (params) => {
+				if (params.node.rowPinned) {
+					return { fontWeight: 'bold', backgroundColor: '#f3f4f6' };
+				}
+				return null;
+			}
 		},
 		{
 			headerName: 'Item/Labour',
 			field: 'item_name',
 			filter: 'agTextColumnFilter',
 			sortable: true,
-			width: 150
+			width: 150,
+			cellStyle: (params) => {
+				if (params.node.rowPinned) {
+					return { fontWeight: 'bold', backgroundColor: '#f3f4f6' };
+				}
+				return null;
+			}
 		},
 		{
 			headerName: 'Qty/Workers',
@@ -416,10 +467,16 @@ function Dashboard(){
 			sortable: true,
 			width: 140,
 			valueFormatter: (params) => {
-				if (params.value === null || params.value === undefined) return '-';
+				if (params.value === null || params.value === undefined || params.value === '') return '-';
 				return new Intl.NumberFormat('en-IN', {
 					maximumFractionDigits: 2
 				}).format(params.value);
+			},
+			cellStyle: (params) => {
+				if (params.node.rowPinned) {
+					return { fontWeight: 'bold', backgroundColor: '#f3f4f6' };
+				}
+				return null;
 			}
 		},
 		{
@@ -428,7 +485,13 @@ function Dashboard(){
 			filter: 'agNumberColumnFilter',
 			sortable: true,
 			width: 110,
-			valueFormatter: formatCurrencyGrid
+			valueFormatter: formatCurrencyGrid,
+			cellStyle: (params) => {
+				if (params.node.rowPinned) {
+					return { fontWeight: 'bold', backgroundColor: '#f3f4f6' };
+				}
+				return null;
+			}
 		},
 		{
 			headerName: 'Total',
@@ -437,7 +500,12 @@ function Dashboard(){
 			sortable: true,
 			width: 130,
 			valueFormatter: formatCurrencyGrid,
-			cellStyle: { fontWeight: '600', color: '#1f2937' }
+			cellStyle: (params) => {
+				if (params.node.rowPinned) {
+					return { fontWeight: 'bold', color: '#1f2937', backgroundColor: '#e5e7eb', fontSize: '14px' };
+				}
+				return { fontWeight: '600', color: '#1f2937' };
+			}
 		},
 		{
 			headerName: 'Paid',
@@ -446,7 +514,12 @@ function Dashboard(){
 			sortable: true,
 			width: 130,
 			valueFormatter: formatCurrencyGrid,
-			cellStyle: { fontWeight: 'bold', color: '#059669' }
+			cellStyle: (params) => {
+				if (params.node.rowPinned) {
+					return { fontWeight: 'bold', color: '#059669', backgroundColor: '#d1fae5', fontSize: '14px' };
+				}
+				return { fontWeight: 'bold', color: '#059669' };
+			}
 		},
 		{
 			headerName: 'Pending',
@@ -455,7 +528,12 @@ function Dashboard(){
 			sortable: true,
 			width: 140,
 			valueFormatter: formatCurrencyGrid,
-			cellStyle: { fontWeight: 'bold', color: '#dc2626' }
+			cellStyle: (params) => {
+				if (params.node.rowPinned) {
+					return { fontWeight: 'bold', color: '#dc2626', backgroundColor: '#fee2e2', fontSize: '14px' };
+				}
+				return { fontWeight: 'bold', color: '#dc2626' };
+			}
 		},
 		{
 			headerName: 'Vendor',
@@ -463,7 +541,18 @@ function Dashboard(){
 			filter: 'agTextColumnFilter',
 			sortable: true,
 			width: 140,
-			valueFormatter: (params) => params.value || '-'
+			valueFormatter: (params) => {
+				if (params.node.rowPinned) {
+					return params.value; // Show 'TOTAL'
+				}
+				return params.value || '-';
+			},
+			cellStyle: (params) => {
+				if (params.node.rowPinned) {
+					return { fontWeight: 'bold', backgroundColor: '#f3f4f6', fontSize: '14px' };
+				}
+				return null;
+			}
 		}
 	], []);
 
@@ -563,6 +652,70 @@ function Dashboard(){
 		sortable: true,
 		filter: true,
 	}), []);
+
+	// Calculate totals for transactions
+	const transactionTotals = useMemo(() => {
+		if (!transactions || transactions.length === 0) {
+			return {
+				total_amount: 0,
+				amount: 0,
+				debit_entry: 0
+			};
+		}
+
+		return transactions.reduce((acc, transaction) => {
+			return {
+				total_amount: acc.total_amount + (parseFloat(transaction.total_amount) || 0),
+				amount: acc.amount + (parseFloat(transaction.amount) || 0),
+				debit_entry: acc.debit_entry + (parseFloat(transaction.debit_entry) || 0)
+			};
+		}, { total_amount: 0, amount: 0, debit_entry: 0 });
+	}, [transactions]);
+
+	// Get unique items for filter dropdown
+	const uniqueItems = useMemo(() => {
+		if (!transactions || transactions.length === 0) return [];
+		const items = [...new Set(transactions.map(t => t.item_name))];
+		return items.filter(item => item && item !== 'N/A').sort();
+	}, [transactions]);
+
+	// Filter transactions based on selected filters
+	const filteredTransactions = useMemo(() => {
+		if (!transactions) return [];
+		
+		return transactions.filter(transaction => {
+			// Type filter
+			if (transactionTypeFilter && transaction.transaction_type !== transactionTypeFilter) {
+				return false;
+			}
+			
+			// Item filter
+			if (transactionItemFilter && transaction.item_name !== transactionItemFilter) {
+				return false;
+			}
+			
+			return true;
+		});
+	}, [transactions, transactionTypeFilter, transactionItemFilter]);
+
+	// Recalculate totals for filtered transactions
+	const filteredTransactionTotals = useMemo(() => {
+		if (!filteredTransactions || filteredTransactions.length === 0) {
+			return {
+				total_amount: 0,
+				amount: 0,
+				debit_entry: 0
+			};
+		}
+
+		return filteredTransactions.reduce((acc, transaction) => {
+			return {
+				total_amount: acc.total_amount + (parseFloat(transaction.total_amount) || 0),
+				amount: acc.amount + (parseFloat(transaction.amount) || 0),
+				debit_entry: acc.debit_entry + (parseFloat(transaction.debit_entry) || 0)
+			};
+		}, { total_amount: 0, amount: 0, debit_entry: 0 });
+	}, [filteredTransactions]);
 
 	// AG Grid - Grid ready events
 	const onGridReady = useCallback((params) => {
@@ -719,18 +872,31 @@ function Dashboard(){
 				</div>
 
 				{/* Counter Boxes Grid */}
-				<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
-					{counterConfig.map((counter, index) => {
+				<div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6 ${
+					selectedSite 
+						? 'lg:grid-cols-3 xl:grid-cols-6' 
+						: 'lg:grid-cols-2 xl:grid-cols-4'
+				}`}>
+					{counterConfig
+						.filter(counter => {
+							// Hide Total Budget and Client Paid when All Sites is selected
+							if (!selectedSite && (counter.id === 'total-budget' || counter.id === 'client-paid')) {
+								return false;
+							}
+							return true;
+						})
+						.map((counter, index) => {
 						const IconComponent = counter.icon;
 						const counterData = dashboardData?.[counter.dataKey];
 						const change = counterData?.change || 0;
 						const changeType = counterData?.changeType || 'neutral';
 						const percentage = counterData?.percentage;
+						const displayValue = getDisplayValue(counter, dashboardData);
 						
 						return (
 							<div 
 								key={counter.id}
-								className="rounded-lg shadow-sm border hover:shadow-md transition-all duration-300 cursor-pointer group transform hover:scale-105"
+								className="rounded-lg shadow-sm border hover:shadow-md transition-all duration-300 cursor-pointer group transform hover:scale-105 min-h-[120px]"
 								style={{ 
 									backgroundColor: '#ffffff',
 									borderColor: '#e5e7eb',
@@ -745,8 +911,8 @@ function Dashboard(){
 											<p className="text-xs font-medium group-hover:text-gray-800 transition-colors truncate">
 												{counter.title}
 											</p>
-											<p className="text-lg font-bold mt-1 transition-all duration-200">
-												{getDisplayValue(counter, dashboardData)}
+											<p className={`${getValueFontSize(displayValue)} font-bold mt-1 transition-all duration-200 break-words leading-tight`}>
+												{displayValue}
 											</p>
 											
 											{/* Show percentage for budget-related cards */}
@@ -817,9 +983,9 @@ function Dashboard(){
 										</p>
 									</div>
 								</div>
-								<span className={`text-2xl font-bold ${
+								<span className={`${getValueFontSize(formatCurrency(Math.abs(dashboardData.cashFlow.amount)))} font-bold ${
 									dashboardData.cashFlow.status === 'surplus' ? 'text-green-700' : 'text-red-700'
-								}`}>
+								} break-words leading-tight text-right`}>
 									{formatCurrency(Math.abs(dashboardData.cashFlow.amount))}
 								</span>
 							</div>
@@ -859,7 +1025,7 @@ function Dashboard(){
 										<p className="text-xs text-gray-600">Available for expenses</p>
 									</div>
 								</div>
-								<span className="text-2xl font-bold text-black">
+								<span className={`${getValueFontSize(formatCurrency(dashboardData.budgetUtilization.remaining))} font-bold text-black break-words leading-tight text-right`}>
 									{formatCurrency(dashboardData.budgetUtilization.remaining)}
 								</span>
 							</div>
@@ -890,24 +1056,62 @@ function Dashboard(){
 					
 					{/* Search and Export Bar */}
 					<div className="mb-4">
-						<div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-							<div className="w-full sm:w-1/3">
-								<ThemeUI.Input
-									value={searchText}
-									onChange={onSearchChange}
-									placeholder="Search transactions..."
-									leftElement={<Search size={16} className="text-gray-400" />}
-									className="bg-white"
-								/>
-							</div>
-							<div className="flex gap-2">
-								<ThemeUI.Button 
-									onClick={exportToCSV} 
-									gradientColors={{ start: theme.primaryGradientStart, end: theme.primaryGradientEnd }}
-									direction={theme.gradientDirection}
-								>
-									<Download className="h-4 w-4 me-2" /> Export
-								</ThemeUI.Button>
+						<div className="flex flex-col gap-4">
+							{/* Filters Row */}
+							<div className="flex flex-wrap items-end gap-3">
+								{/* Search */}
+								<div className="flex-1 min-w-[200px]">
+									<ThemeUI.FormField label="Search" name="search">
+										<ThemeUI.Input
+											value={searchText}
+											onChange={onSearchChange}
+											placeholder="Search transactions..."
+											leftElement={<Search size={16} className="text-gray-400" />}
+											className="bg-white"
+										/>
+									</ThemeUI.FormField>
+								</div>
+								{/* Type Filter */}
+								<div className="min-w-[150px]">
+									<ThemeUI.FormField label="Type" name="transactionType">
+										<ThemeUI.Select
+											value={transactionTypeFilter}
+											onChange={(opt) => setTransactionTypeFilter(opt?.value ?? '')}
+											options={[
+												{ value: '', label: "All Types" },
+												{ value: 'Material', label: "Material" },
+												{ value: 'Labour', label: "Labour" }
+											]}
+											placeholder="All Types"
+										/>
+									</ThemeUI.FormField>
+								</div>
+								{/* Item/Labour Filter */}
+								<div className="min-w-[200px]">
+									<ThemeUI.FormField label="Item/Labour" name="transactionItem">
+										<ThemeUI.Select
+											value={transactionItemFilter}
+											onChange={(opt) => setTransactionItemFilter(opt?.value ?? '')}
+											options={[
+												{ value: '', label: "All Items" },
+												...uniqueItems.map(item => ({ value: item, label: item }))
+											]}
+											placeholder="All Items"
+										/>
+									</ThemeUI.FormField>
+								</div>
+
+								{/* Export Button */}
+								<div>
+									<ThemeUI.Button 
+										onClick={exportToCSV} 
+										gradientColors={{ start: theme.primaryGradientStart, end: theme.primaryGradientEnd }}
+										direction={theme.gradientDirection}
+										className="mt-[22px]"
+									>
+										<Download className="h-4 w-4 me-2" /> Export
+									</ThemeUI.Button>
+								</div>
 							</div>
 						</div>
 					</div>
@@ -925,13 +1129,27 @@ function Dashboard(){
 								headerTextColor: "white" 
 							})}
 							defaultColDef={defaultColDef}
-							rowData={transactions}
+							rowData={filteredTransactions}
 							rowHeight={55}
 							columnDefs={columnDefs}
 							pagination={true}
 							paginationPageSize={10}
 							paginationPageSizeSelector={[10, 20, 50, 100]}
 							onGridReady={onGridReady}
+							pinnedBottomRowData={[
+								{
+									date: '',
+									transaction_type: '',
+									site_name: '',
+									item_name: '',
+									quantity: '',
+									rate: '',
+									total_amount: filteredTransactionTotals.total_amount,
+									amount: filteredTransactionTotals.amount,
+									debit_entry: filteredTransactionTotals.debit_entry,
+									vendor_name: ''
+								}
+							]}
 						/>
 					</div>
 				</div>

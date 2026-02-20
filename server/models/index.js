@@ -1,17 +1,18 @@
 const { sequelize, Sequelize } = require('../config/db');
-const User          = require('./userModel');
-const Role          = require('./roleModel');
-const UserRole      = require('./userRoleModel');
-const RefreshToken  = require('./refreshTokenModel');
-const Permission    = require('./permissionModel');
-const Site          = require('./siteModel');
-const SitePayment   = require('./sitePaymentModel');
-const Unit          = require('./unitModel');
-const Material      = require('./materialModel');
-const MaterialEntry = require('./materialEntryModel');
-const Labour        = require('./labourModel');
-const LabourEntry   = require('./labourEntryModel');
-const Vendor        = require('./vendorModel');
+const User                  = require('./userModel');
+const Role                  = require('./roleModel');
+const UserRole              = require('./userRoleModel');
+const RefreshToken          = require('./refreshTokenModel');
+const Permission            = require('./permissionModel');
+const Site                  = require('./siteModel');
+const SitePayment           = require('./sitePaymentModel');
+const Unit                  = require('./unitModel');
+const Material              = require('./materialModel');
+const MaterialEntry         = require('./materialEntryModel');
+const MaterialEntryHistory  = require('./materialEntryHistoryModel');
+const Labour                = require('./labourModel');
+const LabourEntry           = require('./labourEntryModel');
+const Vendor                = require('./vendorModel');
 
 // USER-ROLE MANY-TO-MANY ASSOCIATIONS 
 User.belongsToMany(Role, {
@@ -322,6 +323,61 @@ User.hasMany(MaterialEntry, {
     as: 'updatedMaterialEntries' 
 });
 
+// MATERIAL ENTRY HISTORY - MATERIAL ENTRY ASSOCIATIONS
+MaterialEntryHistory.belongsTo(MaterialEntry, {
+    foreignKey: 'material_entry_id',
+    as: 'materialEntry'
+});
+
+MaterialEntry.hasMany(MaterialEntryHistory, {
+    foreignKey: 'material_entry_id',
+    as: 'history'
+});
+
+// MATERIAL ENTRY HISTORY - SITE ASSOCIATIONS
+MaterialEntryHistory.belongsTo(Site, {
+    foreignKey: 'site_id',
+    as: 'site'
+});
+
+Site.hasMany(MaterialEntryHistory, {
+    foreignKey: 'site_id',
+    as: 'materialEntryHistory'
+});
+
+// MATERIAL ENTRY HISTORY - MATERIAL ASSOCIATIONS
+MaterialEntryHistory.belongsTo(Material, {
+    foreignKey: 'material_id',
+    as: 'material'
+});
+
+Material.hasMany(MaterialEntryHistory, {
+    foreignKey: 'material_id',
+    as: 'materialEntryHistory'
+});
+
+// MATERIAL ENTRY HISTORY - VENDOR ASSOCIATIONS
+MaterialEntryHistory.belongsTo(Vendor, {
+    foreignKey: 'vendor_id',
+    as: 'vendor'
+});
+
+Vendor.hasMany(MaterialEntryHistory, {
+    foreignKey: 'vendor_id',
+    as: 'materialEntryHistory'
+});
+
+// MATERIAL ENTRY HISTORY - USER (PERFORMER) ASSOCIATIONS
+MaterialEntryHistory.belongsTo(User, {
+    foreignKey: 'performed_by',
+    as: 'performer'
+});
+
+User.hasMany(MaterialEntryHistory, {
+    foreignKey: 'performed_by',
+    as: 'performedMaterialEntryHistory'
+});
+
 // LABOUR AUDIT FIELDS
 Labour.belongsTo(User, {
     foreignKey: 'created_by',
@@ -422,6 +478,7 @@ module.exports = {
     Unit,
     Material,
     MaterialEntry,
+    MaterialEntryHistory,
     Labour,
     LabourEntry,
     Vendor

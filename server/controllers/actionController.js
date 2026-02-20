@@ -618,10 +618,16 @@ const actionController = {
                 },
                 order: [['name', 'ASC']]
             });
+            const formattedSites = sites.map(site => ({
+                id: site.id,
+                name: site.name,
+                total_budget: site.total_budget,
+                start_date: site.start_date ? new Date(site.start_date).toISOString().split('T')[0] : null
+            }));
             res.status(200).json({
                 success: true,
                 message: 'Sites fetched successfully',
-                data: sites
+                data: formattedSites
             });
         }catch(err){
             console.error('Get sites error:', err);

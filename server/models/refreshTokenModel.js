@@ -10,8 +10,7 @@ const RefreshToken  = sequelize.define(
         },
         token: {
             type: DataTypes.STRING(255),
-            allowNull: false,
-            unique: true
+            allowNull: false
         },
         user_id: {
             type: DataTypes.BIGINT,

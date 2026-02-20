@@ -271,37 +271,18 @@ function Layout({ children, selectedSite, siteName }){
 			>
 				<div className="sticky top-0 z-10">
 					<div className="px-4 py-5">
-						{companyLogo ? (
-							<div className="flex items-center justify-center">
-								<div 
-									className={`transition-all duration-300 ${
-										isExpanded ? 'w-35 h-10' : 'w-9 h-9'
-									}`}
-								>
-									<img
-										src={companyLogo}
-										alt={companyName || "Company Logo"}
-										className="w-full h-full object-contain"
-										onError={(e) => {
-											setCompanyLogo(null);
-										}}
-									/>
-								</div>
+						<div className="flex items-center gap-3">
+							<div className="flex-shrink-0 w-9 h-9 flex items-center justify-center">
+								<Target size={34}/>
 							</div>
-						) : (
-							<div className="flex items-center gap-3">
-								<div className="flex-shrink-0 w-9 h-9 flex items-center justify-center">
-									<Target size={34}/>
-								</div>
-								<div
-									className={`overflow-hidden transition-all duration-300 ${
-										isExpanded ? 'w-auto opacity-100' : 'w-0 opacity-0'
-									}`}
-								>
-									<span className="font-bold text-xl whitespace-nowrap">Grandee</span>
-								</div>
+							<div
+								className={`overflow-hidden transition-all duration-300 ${
+									isExpanded ? 'w-auto opacity-100' : 'w-0 opacity-0'
+								}`}
+							>
+								<span className="font-bold text-xl whitespace-nowrap">Grandee</span>
 							</div>
-						)}
+						</div>
 					</div>
 				</div>
 				<nav className="flex-1 px-2 overflow-y-auto sidebar-scroll">
@@ -442,7 +423,12 @@ function Layout({ children, selectedSite, siteName }){
 								<div className="hidden md:flex items-center gap-2">
 									<ThemeUI.Button
 										type="button"
-										onClick={() => navigate('/materialentry', { state: { siteId: selectedSite } })}
+										onClick={() => navigate('/materialentry', { 
+											state: { 
+												openModal: true, 
+												siteId: selectedSite 
+											} 
+										})}
 										gradientColors={{
 											start: theme.primaryGradientStart,
 											end: theme.primaryGradientEnd,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react"
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import axios from "axios"
 import { toast } from "react-toastify"
 import { AgGridReact } from "ag-grid-react"
@@ -13,10 +13,11 @@ import NoRowsOverlay from "./NoRowsOverlay"
 
 function Labour() {
     const { theme } = useTheme()
+    const gridRef = useRef()
+    const isFetching = useRef(false)
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [isLoading, setIsLoading] = useState(false)
-    const [totalRows, setTotalRows] = useState(0)
-    const [perPage, setPerPage] = useState(10)
+    const [pageSize, setPageSize] = useState(10)
     const [currentPage, setCurrentPage] = useState(1)
     const [labours, setLabours] = useState([])
     const [editingLabour, setEditingLabour] = useState(null)
@@ -79,35 +80,54 @@ function Labour() {
         return () => window.removeEventListener('permissionsUpdated', handlePermissionsUpdate)
     }, [getUserPermissions])
 
-    // Fetch labours
+    // Fetch labours with the same pattern as Language component
     const fetchLabours = useCallback(async () => {
+        if (isFetching.current) return // Prevent double fetching
+        
+        isFetching.current = true
         setIsLoading(true)
         try {
             const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/labour`, {
                 params: {
                     page: currentPage,
-                    limit: perPage,
+                    limit: pageSize,
                     search: searchQuery,
                     status: statusFilter === "all" ? "" : statusFilter,
+                    _t: Date.now() 
                 },
             })
             if (response.data.success) {
-                setLabours(response.data.data)
-                setTotalRows(response.data.total || 0)
+                setLabours(response.data.data || [])
+            } else {
+                setLabours([])
             }
         } catch (err) {
             console.error("Error fetching labours:", err)
             toast.error(err.response?.data?.message || "Failed to fetch labours")
             setLabours([])
-            setTotalRows(0)
         } finally {
             setIsLoading(false)
+            isFetching.current = false
         }
-    }, [currentPage, perPage, searchQuery, statusFilter])
+    }, [currentPage, pageSize, searchQuery, statusFilter])
 
     useEffect(() => {
         fetchLabours()
     }, [fetchLabours])
+
+    // Pagination change handler - same as Language component
+    const onPaginationChanged = useCallback((params) => {
+        if (params.api) {
+            const newPageSize = params.api.paginationGetPageSize()
+            const newPage = params.api.paginationGetCurrentPage() + 1
+            if (newPageSize !== pageSize) {
+                setPageSize(newPageSize)
+                setCurrentPage(1)
+            } else if (newPage !== currentPage) {
+                setCurrentPage(newPage)
+            }
+        }
+    }, [pageSize, currentPage])
 
     // Typing animation for placeholder
     useEffect(() => {
@@ -222,19 +242,13 @@ function Labour() {
         setCurrentPage(1)
     }
 
-    const handlePageChange = (page) => setCurrentPage(page)
-    const handlePerRowsChange = (newPerPage) => {
-        setPerPage(newPerPage)
-        setCurrentPage(1)
-    }
-
-    // AG Grid Columns
+    // AG Grid Columns with updated S.No calculation
     const columnDefs = useMemo(() => {
         const baseColumns = [
             {
                 headerName: "S.No",
                 width: 80,
-                valueGetter: (params) => (currentPage - 1) * perPage + (params.node.rowIndex ?? 0) + 1,
+                valueGetter: (params) => ((currentPage - 1) * pageSize) + (params.node.rowIndex ?? 0) + 1,
                 sortable: false,
             },
             { headerName: "Name", field: "name", flex: 1, minWidth: 200 },
@@ -306,7 +320,7 @@ function Labour() {
         }
 
         return baseColumns
-    }, [currentPage, perPage, labourPermissions, theme])
+    }, [currentPage, pageSize, labourPermissions, theme])
 
     const renderLabourForm = () => {
         return (
@@ -413,35 +427,31 @@ function Labour() {
             </div>
 
             {/* AG Grid Table */}
-            <div style={{ "--header-gradient": `linear-gradient(${theme.gradientDirection}, ${theme.primaryGradientStart}, ${theme.primaryGradientEnd})` }}>
+            <div 
+                className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden"
+                style={{ "--header-gradient": `linear-gradient(${theme.gradientDirection}, ${theme.primaryGradientStart}, ${theme.primaryGradientEnd})` }}
+            >
                 <AgGridReact
+                    ref={gridRef}
                     className="custom-ag-grid"
+                    rowData={labours}
+                    columnDefs={columnDefs}
                     domLayout="autoHeight"
                     theme={themeQuartz.withParams({
-                        spacing: 7,
-                        headerHeight: 45,
-                        headerFontSize: 16,
-                        fontSize: 13,
+                        spacing: 8,
+                        headerHeight: 48,
                         headerTextColor: "white",
+                        rowHeight: 50,
+                        fontFamily: 'inherit'
                     })}
-                    defaultColDef={{ resizable: true }}
-                    rowData={labours}
-                    rowHeight={55}
-                    columnDefs={columnDefs}
-                    pagination
-                    paginationPageSize={perPage}
+                    pagination={true}
+                    paginationPageSize={pageSize}
                     paginationPageSizeSelector={[10, 20, 50, 100]}
-                    suppressPaginationPanel={false}
+                    onPaginationChanged={onPaginationChanged}
+                    loading={isLoading}
+                    overlayLoadingTemplate={'<span class="p-4 text-gray-500">Loading...</span>'}
                     noRowsOverlayComponent={NoRowsOverlay}
                     noRowsOverlayComponentParams={{ text: "No Labours Found" }}
-                    onPaginationChanged={(params) => {
-                        if (params.api) {
-                            const newPage = params.api.paginationGetCurrentPage() + 1
-                            const newSize = params.api.paginationGetPageSize()
-                            if (newPage !== currentPage) handlePageChange(newPage)
-                            if (newSize !== perPage) handlePerRowsChange(newSize)
-                        }
-                    }}
                 />
             </div>
 

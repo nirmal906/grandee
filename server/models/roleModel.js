@@ -10,8 +10,7 @@ const Role          = sequelize.define(
         },
         name: {
             type: DataTypes.STRING(50),
-            allowNull: false,
-            unique: true
+            allowNull: false
         },
         created_by: {
             type: DataTypes.BIGINT,

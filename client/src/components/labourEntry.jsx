@@ -575,7 +575,33 @@ function LabourEntry() {
                     />
                 </ThemeUI.FormField>
 
-                <ThemeUI.FormField label="Credit Entry (Paid ₹)" name="credit_entry" error={backendErrors.credit_entry}>
+                <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                        <label className="block text-sm font-medium text-gray-700">
+                            Paid ₹
+                        </label>
+                        <ThemeUI.Checkbox
+                            id="paid_checkbox"
+                            name="paid_checkbox"
+                            checked={formData.credit_entry === totalAmount.toFixed(2) && totalAmount > 0}
+                            onChange={(e) => {
+                                if (e.target.checked) {
+                                    setFormData(prev => ({
+                                        ...prev,
+                                        credit_entry: totalAmount.toFixed(2),
+                                        debit_entry: "0.00"
+                                    }))
+                                } else {
+                                    setFormData(prev => ({
+                                        ...prev,
+                                        credit_entry: "",
+                                        debit_entry: ""
+                                    }))
+                                }
+                            }}
+                            disabled={totalAmount === 0}
+                        />
+                    </div>
                     <ThemeUI.Input
                         type="number"
                         step="0.01"
@@ -585,11 +611,43 @@ function LabourEntry() {
                         value={formData.credit_entry}
                         onChange={handleCreditChange}
                         placeholder="0.00"
+                        error={backendErrors.credit_entry}
                         disabled={totalAmount === 0}
                     />
-                </ThemeUI.FormField>
+                    {backendErrors.credit_entry && (
+                        <div className="flex items-center mt-1 text-red-500 text-xs">
+                            <span>{backendErrors.credit_entry}</span>
+                        </div>
+                    )}
+                </div>
 
-                <ThemeUI.FormField label="Debit Entry (Due ₹)" name="debit_entry" error={backendErrors.debit_entry}>
+                <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                        <label className="block text-sm font-medium text-gray-700">
+                            Due ₹
+                        </label>
+                        <ThemeUI.Checkbox
+                            id="due_checkbox"
+                            name="due_checkbox"
+                            checked={formData.debit_entry === totalAmount.toFixed(2) && totalAmount > 0}
+                            onChange={(e) => {
+                                if (e.target.checked) {
+                                    setFormData(prev => ({
+                                        ...prev,
+                                        debit_entry: totalAmount.toFixed(2),
+                                        credit_entry: "0.00"
+                                    }))
+                                } else {
+                                    setFormData(prev => ({
+                                        ...prev,
+                                        debit_entry: "",
+                                        credit_entry: ""
+                                    }))
+                                }
+                            }}
+                            disabled={totalAmount === 0}
+                        />
+                    </div>
                     <ThemeUI.Input
                         type="number"
                         step="0.01"
@@ -599,9 +657,15 @@ function LabourEntry() {
                         value={formData.debit_entry}
                         onChange={handleDebitChange}
                         placeholder="0.00"
+                        error={backendErrors.debit_entry}
                         disabled={totalAmount === 0}
                     />
-                </ThemeUI.FormField>
+                    {backendErrors.debit_entry && (
+                        <div className="flex items-center mt-1 text-red-500 text-xs">
+                            <span>{backendErrors.debit_entry}</span>
+                        </div>
+                    )}
+                </div>
 
                 <ThemeUI.FormField label="Status" name="status">
                     <ThemeUI.Select

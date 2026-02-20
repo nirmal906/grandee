@@ -1,5 +1,55 @@
-const { MaterialEntry, Material, Vendor, Site, User } = require('../models');
+const { MaterialEntry, Material, Vendor, Site, User, MaterialEntryHistory } = require('../models');
 const { Op } = require('sequelize');
+const path = require('path');
+const fs = require('fs');
+
+// Define upload directory path
+const UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'material-entries');
+
+// Helper function to track changed fields
+const getChangedFields = (oldEntry, newData) => {
+    const changes = {};
+    const fieldsToTrack = [
+        'site_id', 'material_id', 'vendor_id', 'date', 'quantity', 
+        'rate', 'additional_charges', 'debit_entry', 'credit_entry', 
+        'status', 'invoice_photo'
+    ];
+    fieldsToTrack.forEach(field => {
+        if (newData[field] !== undefined) {
+            const oldValue = oldEntry[field];
+            const newValue = newData[field];
+            if (oldValue != newValue) { // Using != to handle type coercion
+                changes[field] = {
+                    from: oldValue,
+                    to: newValue
+                };
+            }
+        }
+    });
+    return Object.keys(changes).length > 0 ? JSON.stringify(changes) : null;
+};
+
+// Helper function to create history entry
+const createHistoryEntry = async (entryId, entryData, actionType, performedBy, changedFields = null, transaction) => {
+    await MaterialEntryHistory.create({
+        material_entry_id: entryId,
+        site_id: entryData.site_id,
+        material_id: entryData.material_id,
+        vendor_id: entryData.vendor_id || null,
+        date: entryData.date,
+        quantity: entryData.quantity,
+        rate: entryData.rate,
+        additional_charges: entryData.additional_charges || 0,
+        debit_entry: entryData.debit_entry || 0,
+        credit_entry: entryData.credit_entry || 0,
+        status: entryData.status,
+        invoice_photo: entryData.invoice_photo || null,
+        action_type: actionType,
+        changed_fields: changedFields,
+        performed_by: performedBy,
+        performed_at: new Date()
+    }, { transaction });
+};
 
 const materialEntryController = {
 
@@ -111,6 +161,75 @@ const materialEntryController = {
             res.status(500).json({
                 success: false,
                 message: 'Something went wrong. Please try again later!'
+            });
+        }
+    },
+
+    // Get material entry history
+    getMaterialEntryHistory: async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { page = 1, limit = 20 } = req.query;
+
+            const pageNum = parseInt(page, 10);
+            const limitNum = Math.min(parseInt(limit, 10), 100);
+
+            // Verify entry exists
+            const entry = await MaterialEntry.findByPk(id);
+            if (!entry) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Material entry not found'
+                });
+            }
+
+            const { rows, count } = await MaterialEntryHistory.findAndCountAll({
+                where: { material_entry_id: id },
+                order: [['performed_at', 'DESC']],
+                limit: limitNum,
+                offset: (pageNum - 1) * limitNum,
+                include: [
+                    {
+                        model: Site,
+                        as: 'site',
+                        attributes: ['id', 'name']
+                    },
+                    {
+                        model: Material,
+                        as: 'material',
+                        attributes: ['id', 'name'],
+                        include: [{
+                            model: require('../models').Unit,
+                            as: 'unit',
+                            attributes: ['name']
+                        }]
+                    },
+                    {
+                        model: Vendor,
+                        as: 'vendor',
+                        attributes: ['id', 'name'],
+                        required: false
+                    },
+                    {
+                        model: User,
+                        as: 'performer',
+                        attributes: ['id', 'name', 'email']
+                    }
+                ]
+            });
+
+            res.status(200).json({
+                success: true,
+                data: rows,
+                total: count,
+                page: pageNum,
+                limit: limitNum
+            });
+        } catch (err) {
+            console.error('getMaterialEntryHistory error:', err);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to fetch material entry history'
             });
         }
     },
@@ -281,6 +400,12 @@ const materialEntryController = {
                 errors.status = 'Status must be 0 or 1';
             }
 
+            // File handling
+            let invoicePhotoFilename = null;
+            if (req.file) {
+                invoicePhotoFilename = req.file.filename;
+            }
+
             // Total calculation validation
             const totalAmount = calculateTotalAmount(quantity, rate, additional_charges);
             const debitAmount = Number(debit_entry || 0);
@@ -292,11 +417,15 @@ const materialEntryController = {
             }
 
             if (Object.keys(errors).length > 0) {
+                if (req.file) {
+                    const filePath = path.join(UPLOAD_DIR, req.file.filename);
+                    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+                }
                 await transaction.rollback();
                 return res.status(400).json({
                     success: false,
                     message: 'Validation failed',
-                    errors
+                    errors,
                 });
             }
 
@@ -311,11 +440,23 @@ const materialEntryController = {
                 debit_entry: debit_entry ? Number(debit_entry).toFixed(2) : 0.00,
                 credit_entry: credit_entry ? Number(credit_entry).toFixed(2) : 0.00,
                 status: status !== undefined ? Number(status) : 1,
+                invoice_photo: invoicePhotoFilename,
                 created_by: userId,
-                updated_by: userId
+                updated_by: userId,
             };
 
-            await MaterialEntry.create(entryData, { transaction });
+            const newEntry = await MaterialEntry.create(entryData, { transaction });
+
+            // Create history entry for creation
+            await createHistoryEntry(
+                newEntry.id,
+                entryData,
+                'created',
+                userId,
+                null,
+                transaction
+            );
+
             await transaction.commit();
 
             res.status(201).json({
@@ -323,11 +464,15 @@ const materialEntryController = {
                 message: 'Material entry created successfully'
             });
         } catch (err) {
+            if (req.file) {
+                const filePath = path.join(UPLOAD_DIR, req.file.filename);
+                if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+            }
             await transaction.rollback();
             console.error('createMaterialEntry error:', err);
             res.status(500).json({
                 success: false,
-                message: 'Something went wrong. Please try again later!'
+                message: 'Something went wrong. Please try again later!',
             });
         }
     },
@@ -347,12 +492,18 @@ const materialEntryController = {
                 additional_charges,
                 debit_entry,
                 credit_entry,
-                status
+                status,
+                invoiceRemoved
             } = req.body;
             const userId = req.user?.id;
             const entry = await MaterialEntry.findByPk(id, { transaction });
             
             if (!entry) {
+                // Clean up uploaded file if entry not found
+                if (req.file) {
+                    const filePath = path.join(UPLOAD_DIR, req.file.filename);
+                    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+                }
                 await transaction.rollback();
                 return res.status(404).json({
                     success: false,
@@ -361,6 +512,7 @@ const materialEntryController = {
             }
             
             const errors = {};
+
 
             // Site validation
             if (site_id !== undefined) {
@@ -453,6 +605,27 @@ const materialEntryController = {
                 errors.status = 'Status must be 0 or 1';
             }
 
+            let newInvoicePhoto = entry.invoice_photo;
+    
+            // Handle file replacement
+            if (req.file) {
+                if (entry.invoice_photo) {
+                    const oldPath = path.join(UPLOAD_DIR, entry.invoice_photo);
+                    if (fs.existsSync(oldPath)) {
+                        fs.unlinkSync(oldPath);
+                    }
+                }
+                newInvoicePhoto = req.file.filename;
+            }
+            // Handle explicit removal
+            else if (invoiceRemoved === 'true' && entry.invoice_photo) {
+                const oldPath = path.join(UPLOAD_DIR, entry.invoice_photo);
+                if (fs.existsSync(oldPath)) {
+                    fs.unlinkSync(oldPath);
+                }
+                newInvoicePhoto = null;
+            }
+
             // Total calculation validation for update
             const finalQuantity = quantity !== undefined ? Number(quantity) : Number(entry.quantity);
             const finalRate = rate !== undefined ? Number(rate) : Number(entry.rate);
@@ -467,15 +640,24 @@ const materialEntryController = {
             }
 
             if (Object.keys(errors).length > 0) {
+                if (req.file) {
+                    const filePath = path.join(UPLOAD_DIR, req.file.filename);
+                    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+                }
                 await transaction.rollback();
                 return res.status(400).json({
                     success: false,
                     message: 'Validation failed',
-                    errors
+                    errors,
                 });
             }
 
-            const updateData = { updated_by: userId, updated_at: new Date() };
+            const updateData = { 
+                updated_by: userId, 
+                updated_at: new Date(),
+                invoice_photo: newInvoicePhoto 
+            };
+
             if (site_id !== undefined) updateData.site_id = site_id;
             if (material_id !== undefined) updateData.material_id = material_id;
             if (vendor_id !== undefined) updateData.vendor_id = vendor_id || null;
@@ -487,7 +669,35 @@ const materialEntryController = {
             if (credit_entry !== undefined) updateData.credit_entry = credit_entry ? Number(credit_entry).toFixed(2) : 0.00;
             if (status !== undefined) updateData.status = Number(status);
 
+            // Track changed fields
+            const changedFields = getChangedFields(entry, updateData);
+
             await entry.update(updateData, { transaction });
+
+            // Create history entry for update
+            const historyData = {
+                site_id: updateData.site_id !== undefined ? updateData.site_id : entry.site_id,
+                material_id: updateData.material_id !== undefined ? updateData.material_id : entry.material_id,
+                vendor_id: updateData.vendor_id !== undefined ? updateData.vendor_id : entry.vendor_id,
+                date: updateData.date !== undefined ? updateData.date : entry.date,
+                quantity: updateData.quantity !== undefined ? updateData.quantity : entry.quantity,
+                rate: updateData.rate !== undefined ? updateData.rate : entry.rate,
+                additional_charges: updateData.additional_charges !== undefined ? updateData.additional_charges : entry.additional_charges,
+                debit_entry: updateData.debit_entry !== undefined ? updateData.debit_entry : entry.debit_entry,
+                credit_entry: updateData.credit_entry !== undefined ? updateData.credit_entry : entry.credit_entry,
+                status: updateData.status !== undefined ? updateData.status : entry.status,
+                invoice_photo: newInvoicePhoto
+            };
+
+            await createHistoryEntry(
+                entry.id,
+                historyData,
+                'updated',
+                userId,
+                changedFields,
+                transaction
+            );
+
             await transaction.commit();
 
             res.status(200).json({
@@ -495,11 +705,15 @@ const materialEntryController = {
                 message: 'Material entry updated successfully'
             });
         } catch (err) {
+            if (req.file) {
+                const filePath = path.join(UPLOAD_DIR, req.file.filename);
+                if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+            }
             await transaction.rollback();
             console.error('updateMaterialEntry error:', err);
             res.status(500).json({
                 success: false,
-                message: 'Something went wrong. Please try again later!'
+                message: 'Something went wrong. Please try again later!',
             });
         }
     },
@@ -517,6 +731,14 @@ const materialEntryController = {
                     success: false,
                     message: 'Material entry not found'
                 });
+            }
+
+            // Delete associated invoice photo if exists
+            if (entry.invoice_photo) {
+                const filePath = path.join(UPLOAD_DIR, entry.invoice_photo);
+                if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                }
             }
             
             await entry.destroy({ transaction });

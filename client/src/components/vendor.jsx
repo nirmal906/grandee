@@ -375,7 +375,7 @@ function Vendor() {
 							error			= {backendErrors.phone}
 						/>
 					</ThemeUI.FormField>
-					<ThemeUI.FormField label="Email Address" name="email" error={backendErrors.email} required>
+					<ThemeUI.FormField label="Email Address" name="email" error={backendErrors.email}>
 						<ThemeUI.Input
 							type			= "email"
 							name			= "email"
@@ -385,7 +385,7 @@ function Vendor() {
 							error			= {backendErrors.email}
 						/>
 					</ThemeUI.FormField>
-					<ThemeUI.FormField label="Search by Pincode" name="pincode" error={backendErrors.pincode} required>
+					<ThemeUI.FormField label="Search by Pincode" name="pincode" error={backendErrors.pincode}>
 						<ThemeUI.AutoComplete
 							id				= "pincode_autocomplete"
 							name			= "pincode"
@@ -424,7 +424,7 @@ function Vendor() {
 					</ThemeUI.FormField>
 				</div>
 				<div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-					<ThemeUI.FormField label="Full Address" name="full_address" error={backendErrors.full_address} required>
+					<ThemeUI.FormField label="Full Address" name="full_address" error={backendErrors.full_address}>
 						<ThemeUI.Textarea
 							name		= "full_address"
 							value		= {formData.full_address}

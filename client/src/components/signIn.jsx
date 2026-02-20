@@ -88,11 +88,11 @@ export default function SignIn(){
         <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 p-4">
             <div className="w-full max-w-md">
                 <div className="bg-white rounded-2xl shadow-xl p-8">
-                    <h2 className="text-center text-3xl font-extrabold text-gray-900 mb-2">
-                        Let's Get You In
+                    <h2 className="text-center text-2xl font-extrabold text-gray-900 mb-2">
+                        Let’s Build Something Strong
                     </h2>
                     <p className="text-center text-sm font-medium mb-6" style={{ color: theme.primaryGradientStart }}>
-                        Behind the Wheel of Every Ride
+                        Powering Construction from Ground Up
                     </p>
                     <form className="space-y-4" onSubmit={handleSubmit}>
                         <ThemeUI.FormField

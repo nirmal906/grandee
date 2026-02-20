@@ -34,22 +34,11 @@ const Vendor        = sequelize.define(
         },
         email: {
             type: DataTypes.STRING(100),
-            allowNull: false,
-            unique: {
-                msg: 'Email must be unique'
-            },
-            validate: {
-                notEmpty: {
-                    msg: 'Email cannot be empty'
-                },
-                isEmail: {
-                    msg: 'Must be a valid email address'
-                }
-            }
+            allowNull: true
         },
         pincode: {
             type: DataTypes.STRING(10),
-            allowNull: false,
+            allowNull: true,
             comment: 'PIN code - required field'
         },
         post_office_name: {
@@ -80,7 +69,7 @@ const Vendor        = sequelize.define(
         },
         full_address: {
             type: DataTypes.TEXT,
-            allowNull: false,
+            allowNull: true,
             comment: 'Full address - required field'
         },
         is_active: {

@@ -1365,18 +1365,25 @@ export const ThemeUI = {
 							hasError ? "border-red-500" : "border-gray-200"
 						} rounded-md overflow-hidden bg-white relative`}
 					>
-						<img
-							src={preview}
-							alt={`${name} preview`}
-							className="w-full h-full object-contain"
-						/>
+						<a 
+							href={preview} 
+							target="_blank" 
+							rel="noopener noreferrer"
+							className="block w-full h-full"
+						>
+							<img
+								src={preview}
+								alt={`${name} preview`}
+								className="w-full h-full object-contain cursor-pointer"
+							/>
+						</a>
 						{onDelete && showDeleteIcon && (
 							<div
-							className="delete-icon"
-							onClick={onDelete}
-							title={`Delete ${name}`}
+								className="delete-icon"
+								onClick={onDelete}
+								title={`Delete ${name}`}
 							>
-							<X size={14} />
+								<X size={14} />
 							</div>
 						)}
 					</div>

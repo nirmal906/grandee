@@ -10,8 +10,7 @@ const Labour        = sequelize.define(
         },
         name: {
             type: DataTypes.STRING(255),
-            allowNull: false,
-            unique: true
+            allowNull: false
         },
         standard_rate: {
             type: DataTypes.DECIMAL(10, 2),

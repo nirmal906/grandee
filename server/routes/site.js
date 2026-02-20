@@ -1,6 +1,7 @@
 const express        = require('express');
 const router         = express.Router();
 const siteController = require('../controllers/siteController');
+const { uploadMiddleware, handleMulterError } = require('../middleware/upload');
 
 // Fetch all sites 
 router.get('/', siteController.getSites);
@@ -9,10 +10,20 @@ router.get('/', siteController.getSites);
 router.get('/:id', siteController.getSiteById);
 
 // Create a site 
-router.post('/', siteController.createSite);
+router.post(
+  '/',
+  uploadMiddleware.siteCheckoutUpload,
+  handleMulterError,
+  siteController.createSite
+);
 
 // Update a site 
-router.put('/:id', siteController.updateSite);
+router.put(
+  '/:id',
+  uploadMiddleware.siteCheckoutUpload,
+  handleMulterError,
+  siteController.updateSite
+);
 
 // Delete a site
 router.delete('/:id', siteController.deleteSite);

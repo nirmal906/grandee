@@ -4,7 +4,7 @@ const path   = require('path');
 
 // Create upload directory if it doesn't exist
 const createUploadDir = (subDir) => {
-    const uploadDir   = path.join(process.cwd(), 'uploads', subDir);
+    const uploadDir = path.join(process.cwd(), 'uploads', subDir);
     if(!fs.existsSync(uploadDir)){
         fs.mkdirSync(uploadDir, { recursive: true });
     }
@@ -28,11 +28,13 @@ const createStorage = (subDir) => {
 // File filter function to check file types
 const fileFilter = (req, file, cb) => {
     const allowedTypes = {
-        end_meter_image        : ['image/png', 'image/jpeg', 'image/jpg'],
+        checkout_photo: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif', 'image/bmp', 'image/tiff'],
+        invoice_photo: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif', 'image/bmp', 'image/tiff']
     };
+    
     if(allowedTypes[file.fieldname]?.includes(file.mimetype)){
         cb(null, true);
-    }else{
+    } else {
         cb(
             new Error(`Invalid file type for ${file.fieldname}. Allowed types: ${allowedTypes[file.fieldname]?.join(', ') || 'none'}`),
             false
@@ -42,6 +44,45 @@ const fileFilter = (req, file, cb) => {
 
 // Create multer upload instances
 const uploadMiddleware = {
+    siteCheckoutUpload: multer({
+        storage: createStorage('sites/checkout'),
+        fileFilter: (req, file, cb) => {
+            const allowedImageTypes = [
+                'image/jpeg',
+                'image/jpg',
+                'image/png',
+                'image/webp',
+                'image/gif',
+                'image/bmp',
+                'image/tiff'
+            ];
+            if (allowedImageTypes.includes(file.mimetype)) {
+                cb(null, true);
+            } else {
+                cb(new Error('Only image files are allowed for site checkout photo'), false);
+            }
+        },
+        limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+    }).single('checkout_photo'),
+
+    // Material entry invoice upload (stores in uploads/material-entries)
+    materialEntryUpload: multer({
+        storage: createStorage('material-entries'),
+        fileFilter: (req, file, cb) => {
+            const allowedImageTypes = [
+                'image/jpeg',
+                'image/jpg',
+                'image/png',
+                'image/webp'
+            ];
+            if (allowedImageTypes.includes(file.mimetype)) {
+                cb(null, true);
+            } else {
+                cb(new Error('Only image files (JPG, PNG, WEBP) are allowed for invoice photo'), false);
+            }
+        },
+        limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+    }).single('invoice_photo'),
 
     // General image upload (stores in uploads/general)
     generalUpload: multer({
@@ -49,7 +90,6 @@ const uploadMiddleware = {
         fileFilter,
         limits: { fileSize: 5 * 1024 * 1024 },
     }).any(),
-
 };
 
 // Error handling middleware for Multer errors
@@ -79,8 +119,7 @@ const handleMulterError = (err, req, res, next) => {
             message: message,
             errors: { [err.field || 'file']: err.message },
         });
-    }else 
-    if(err){
+    } else if(err){
         return res.status(400).json({
             success: false,
             message: err.message || 'File upload error',

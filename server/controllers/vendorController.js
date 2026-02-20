@@ -169,41 +169,27 @@ const vendorController = {
             } = req.body;
             
             const errors = {};
-            
-            // Validate required fields
-            if(!name || !name.trim()){
+
+            // Name (required)
+            if (!name || !name.trim()) {
                 errors.name = 'Vendor name is required';
             }
-            
-            if(!phone || !phone.trim()){
+
+            // Phone (required)
+            if (!phone || !phone.trim()) {
                 errors.phone = 'Phone number is required';
-            }else if(!/^[0-9]{10}$/.test(phone.trim())){
+            } else if (!/^[0-9]{10}$/.test(phone.trim())) {
                 errors.phone = 'Phone number must be exactly 10 digits';
             }
-            
-            if(!email || !email.trim()){
-                errors.email = 'Email is required';
-            }else if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())){
+
+            // Email (optional)
+            if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
                 errors.email = 'Invalid email format';
             }
-            
-            if(!full_address || !full_address.trim()){
-                errors.full_address = 'Full address is required';
-            }
-            
-            // Pincode, district, and state are required
-            if(!pincode || !pincode.trim()){
-                errors.pincode = 'Pincode is required';
-            }else if(!/^\d{6}$/.test(pincode.trim())){
+
+            // Pincode (optional)
+            if (pincode && !/^\d{6}$/.test(pincode.trim())) {
                 errors.pincode = 'Pincode must be exactly 6 digits';
-            }
-            
-            if(!district || !district.trim()){
-                errors.district = 'District is required';
-            }
-            
-            if(!state || !state.trim()){
-                errors.state = 'State is required';
             }
             
             // Check for duplicate vendor name (case-insensitive)
@@ -254,27 +240,24 @@ const vendorController = {
                     errors
                 });
             }
-            
             const vendorData = {
                 name: name.trim(),
                 phone: phone.trim(),
-                email: email.trim().toLowerCase(),
-                pincode: pincode.trim(),
-                post_office_name: post_office_name?.trim() || null,
-                district: district.trim(),
-                state: state.trim(),
-                region: region?.trim() || null,
-                country: country?.trim() || 'India',
-                full_address: full_address.trim(),
-                notes: notes?.trim() || null,
+                email: email ? email.trim().toLowerCase() : null,
+                pincode: pincode ? pincode.trim() : null,
+                post_office_name: post_office_name ? post_office_name.trim() : null,
+                district: district ? district.trim() : null,
+                state: state ? state.trim() : null,
+                region: region ? region.trim() : null,
+                country: country ? country.trim() : 'India',
+                full_address: full_address ? full_address.trim() : null,
+                notes: notes ? notes.trim() : null,
                 created_by: req.user?.id || req.user?.userId,
                 updated_by: req.user?.id || req.user?.userId,
                 is_active: true
             };
-            
             const vendor = await Vendor.create(vendorData, { transaction });
             await transaction.commit();
-            
             const createdVendor = await Vendor.findOne({
                 where: { id: vendor.id },
                 include: [
@@ -371,11 +354,10 @@ const vendorController = {
             
             // Validate email
             if(email !== undefined){
-                if(!email || !email.trim()){
-                    errors.email = 'Email is required';
-                }else if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())){
+                if(email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())){
                     errors.email = 'Invalid email format';
-                }else if(email.trim().toLowerCase() !== vendor.email){
+                }else 
+                if(email && email.trim().toLowerCase() !== vendor.email){
                     const existingEmail = await Vendor.findOne({
                         where: sequelize.where(
                             sequelize.fn('LOWER', sequelize.col('email')),
@@ -389,30 +371,10 @@ const vendorController = {
                 }
             }
             
-            // Validate full address
-            const updatedFullAddress = full_address !== undefined ? full_address : vendor.full_address;
-            if(!updatedFullAddress || !updatedFullAddress.trim()){
-                errors.full_address = 'Full address is required';
-            }
-            
             // Validate pincode
             const updatedPincode = pincode !== undefined ? pincode : vendor.pincode;
-            if(!updatedPincode || !updatedPincode.trim()){
-                errors.pincode = 'Pincode is required';
-            }else if(!/^\d{6}$/.test(updatedPincode.trim())){
+            if(updatedPincode && !/^\d{6}$/.test(updatedPincode.trim())){
                 errors.pincode = 'Pincode must be exactly 6 digits';
-            }
-            
-            // Validate district
-            const updatedDistrict = district !== undefined ? district : vendor.district;
-            if(!updatedDistrict || !updatedDistrict.trim()){
-                errors.district = 'District is required';
-            }
-            
-            // Validate state
-            const updatedState = state !== undefined ? state : vendor.state;
-            if(!updatedState || !updatedState.trim()){
-                errors.state = 'State is required';
             }
             
             if(Object.keys(errors).length > 0){

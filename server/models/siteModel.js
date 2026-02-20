@@ -20,9 +20,19 @@ const Site          = sequelize.define(
                 }
             }
         },
+        client_name: {
+            type: DataTypes.STRING(200),
+            allowNull: true,
+            comment: 'Client name - optional field'
+        },
+        client_mobile: {
+            type: DataTypes.STRING(200),
+            allowNull: false,
+            comment: 'Client mobile number - required field'
+        },
         pincode: {
             type: DataTypes.STRING(10),
-            allowNull: false,
+            allowNull: true,
             comment: 'PIN code - required field'
         },
         post_office_name: {
@@ -32,12 +42,12 @@ const Site          = sequelize.define(
         },
         district: {
             type: DataTypes.STRING(100),
-            allowNull: false,
+            allowNull: true,
             comment: 'District - required field'
         },
         state: {
             type: DataTypes.STRING(100),
-            allowNull: false,
+            allowNull: true,
             comment: 'State - required field'
         },
         region: {
@@ -53,12 +63,18 @@ const Site          = sequelize.define(
         },
         full_address: {
             type: DataTypes.TEXT,
-            allowNull: false,
+            allowNull: true,
             comment: 'Full address - required field'
         },
         start_date: {
             type: DataTypes.DATE,
             allowNull: true
+        },
+        checkout_photo: {
+            type: DataTypes.STRING(255),
+            allowNull: true,
+            defaultValue: null,
+            comment: 'Filename of checkout/completion photo'
         },
         total_budget: {
             type: DataTypes.DECIMAL(15, 2),

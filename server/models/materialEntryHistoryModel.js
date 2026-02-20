@@ -1,13 +1,22 @@
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/db');
 
-const MaterialEntry = sequelize.define(
-    'MaterialEntry',
+const MaterialEntryHistory = sequelize.define(
+    'MaterialEntryHistory',
     {
         id: {
             type: DataTypes.BIGINT,
             primaryKey: true,
             autoIncrement: true
+        },
+        material_entry_id: {
+            type: DataTypes.BIGINT,
+            allowNull: false,
+            references: {
+                model: 'material_entrys',
+                key: 'id'
+            },
+            comment: 'Reference to material_entrys table'
         },
         site_id: {
             type: DataTypes.BIGINT,
@@ -16,7 +25,7 @@ const MaterialEntry = sequelize.define(
                 model: 'sites',
                 key: 'id'
             },
-            comment: 'Site for which material entry is being made'
+            comment: 'Site for which material entry was made'
         },
         material_id: {
             type: DataTypes.BIGINT,
@@ -34,11 +43,6 @@ const MaterialEntry = sequelize.define(
                 key: 'id'
             }
         },
-        invoice_photo: {
-            type: DataTypes.STRING(255),
-            allowNull: true,
-            comment: 'Filename of the uploaded invoice photo',
-        },
         date: {
             type: DataTypes.DATEONLY,
             allowNull: false,
@@ -48,7 +52,7 @@ const MaterialEntry = sequelize.define(
             type: DataTypes.DECIMAL(12, 3),
             allowNull: false,
             defaultValue: 0.000,
-            comment: 'Quantity of material purchased'
+            comment: 'Quantity of material'
         },
         rate: {
             type: DataTypes.DECIMAL(10, 2),
@@ -60,19 +64,19 @@ const MaterialEntry = sequelize.define(
             type: DataTypes.DECIMAL(10, 2),
             allowNull: false,
             defaultValue: 0.00,
-            comment: 'Additional charges (transport, etc.)'
+            comment: 'Additional charges'
         },
         debit_entry: {
             type: DataTypes.DECIMAL(12, 2),
             allowNull: false,
             defaultValue: 0.00,
-            comment: 'Debit amount (unpaid/pending amount)'
+            comment: 'Debit amount'
         },
         credit_entry: {
             type: DataTypes.DECIMAL(12, 2),
             allowNull: false,
             defaultValue: 0.00,
-            comment: 'Credit amount (paid amount)'
+            comment: 'Credit amount'
         },
         status: {
             type: DataTypes.TINYINT,
@@ -80,46 +84,50 @@ const MaterialEntry = sequelize.define(
             defaultValue: 1,
             comment: '0=inactive, 1=active'
         },
-        created_by: {
+        invoice_photo: {
+            type: DataTypes.STRING(255),
+            allowNull: true,
+            comment: 'Invoice/bill photo filename'
+        },
+        action_type: {
+            type: DataTypes.ENUM('created', 'updated', 'deleted'),
+            allowNull: false,
+            comment: 'Type of action performed'
+        },
+        changed_fields: {
+            type: DataTypes.TEXT,
+            allowNull: true,
+            comment: 'JSON string of changed fields'
+        },
+        performed_by: {
             type: DataTypes.BIGINT,
             allowNull: true,
             references: {
                 model: 'users',
                 key: 'id'
-            }
+            },
+            comment: 'User who performed the action'
         },
-        updated_by: {
-            type: DataTypes.BIGINT,
-            allowNull: true,
-            references: {
-                model: 'users',
-                key: 'id'
-            }
-        },
-        total_amount: {
-            type: DataTypes.VIRTUAL(DataTypes.DECIMAL(12, 2), ['quantity', 'rate', 'additional_charges']),
-            get() {
-                const qty = parseFloat(this.quantity) || 0;
-                const r = parseFloat(this.rate) || 0;
-                const charges = parseFloat(this.additional_charges) || 0;
-                return parseFloat(((qty * r) + charges).toFixed(2));
-            }
+        performed_at: {
+            type: DataTypes.DATE,
+            allowNull: false,
+            defaultValue: DataTypes.NOW,
+            comment: 'When the action was performed'
         }
     },
     {
-        tableName: 'material_entrys',
-        timestamps: true,
-        createdAt: 'created_at',
-        updatedAt: 'updated_at',
+        tableName: 'material_entry_history',
+        timestamps: false,
         indexes: [
-            { name: 'idx_material_id', fields: ['material_id'] },
+            { name: 'idx_material_entry_id', fields: ['material_entry_id'] },
             { name: 'idx_site_id', fields: ['site_id'] },
+            { name: 'idx_material_id', fields: ['material_id'] },
             { name: 'idx_vendor_id', fields: ['vendor_id'] },
-            { name: 'idx_date', fields: ['date'] },
-            { name: 'idx_status', fields: ['status'] },
-            { name: 'idx_site_material_date', fields: ['site_id', 'material_id', 'date'] }
+            { name: 'idx_performed_by', fields: ['performed_by'] },
+            { name: 'idx_performed_at', fields: ['performed_at'] },
+            { name: 'idx_action_type', fields: ['action_type'] }
         ]
     }
 );
 
-module.exports = MaterialEntry;
+module.exports = MaterialEntryHistory;

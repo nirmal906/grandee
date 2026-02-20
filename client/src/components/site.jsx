@@ -15,7 +15,8 @@ import * as XLSX from 'xlsx'
 const INITIAL_FORM_STATE = {
 	name: "", client_name: "", client_mobile: "", pincode: "", district: "", state: "", region: "", 
 	country: "India", full_address: "", start_date: "", total_budget: "", status: "planning", 
-	notes: "", post_office_name: ""
+	notes: "", post_office_name: "",
+	checkout_photo: null
 }
 
 const INITIAL_PAYMENT_STATE = {
@@ -43,6 +44,8 @@ function Site() {
 	const [isDeleting, setIsDeleting] = useState(false)
 	const words = ["site name", "location", "status"]
 	const [formData, setFormData] = useState(INITIAL_FORM_STATE)
+	const [checkoutPreview, setCheckoutPreview] = useState(null)
+	const [checkoutRemoved, setCheckoutRemoved] = useState(false)
 	const [selectedSite, setSelectedSite] = useState(null)
 	const [paymentSummary, setPaymentSummary] = useState(null)
 	const [payments, setPayments] = useState([])
@@ -229,6 +232,8 @@ function Site() {
 		}
 		setEditingSite({ isNew: true })
 		setFormData(INITIAL_FORM_STATE)
+		setCheckoutPreview(null)
+		setCheckoutRemoved(false)
 		setSelectedPincode(null)
 		setBackendErrors({})
 		setIsModalOpen(true)
@@ -246,7 +251,10 @@ function Site() {
 			region: site.region || "", country: site.country || "India", post_office_name: site.post_office_name || "",
 			full_address: site.full_address || "", start_date: site.start_date ? site.start_date.split("T")[0] : "",
 			total_budget: site.total_budget || "", status: site.status || "planning", notes: site.notes || "",
+			checkout_photo: null
 		})
+		setCheckoutPreview(site.checkout_photo || null)
+		setCheckoutRemoved(false)
 		if(site.pincode){
 			setSelectedPincode({
 				value: site.pincode,
@@ -264,17 +272,71 @@ function Site() {
 	const handleCancelEdit = () => {
 		setEditingSite(null)
 		setFormData(INITIAL_FORM_STATE)
+		setCheckoutPreview(null)
+		setCheckoutRemoved(false)
 		setSelectedPincode(null)
 		setBackendErrors({})
 		setIsModalOpen(false)
 	}
 
+	const handleCheckoutPhotoChange = (e) => {
+		const file = e.target.files[0]
+		if(file){
+			if (!file.type.startsWith('image/')) {
+				toast.error("Please select an image file (JPG/PNG)")
+				return
+			}
+			setFormData((prev) => ({ ...prev, checkout_photo: file }))
+			setCheckoutPreview(URL.createObjectURL(file))
+			setCheckoutRemoved(false)
+			if(backendErrors.checkout_photo){
+				setBackendErrors((prev) => ({ ...prev, checkout_photo: "" }))
+			}
+		}
+	}
+
+	const handleCheckoutPhotoDelete = () => {
+		setFormData((prev) => ({ ...prev, checkout_photo: null }))
+		setCheckoutPreview(null)
+		setCheckoutRemoved(true)
+		const fileInput = document.getElementById("checkoutPhoto")
+		if(fileInput) fileInput.value = ""
+		if(backendErrors.checkout_photo){
+			setBackendErrors((prev) => ({ ...prev, checkout_photo: "" }))
+		}
+	}
+
 	const handleSaveSite = async () => {
 		setIsLoading(true)
 		try{
-			const url = editingSite?.isNew ? `${import.meta.env.VITE_API_URL}/api/site` : `${import.meta.env.VITE_API_URL}/api/site/${editingSite.id}`
-			const method = editingSite?.isNew ? "post" : "put"
-			const response = await axios[method](url, formData)
+			const formPayload = new FormData()
+			
+			// Append all regular fields
+			Object.entries(formData).forEach(([key, value]) => {
+				if (key !== "checkout_photo" && value !== null && value !== undefined) {
+					formPayload.append(key, value)
+				}
+			})
+
+			// Handle checkout photo
+			if (formData.checkout_photo) {
+				formPayload.append("checkout_photo", formData.checkout_photo)
+			}
+			if (!editingSite?.isNew) {
+				formPayload.append("checkoutRemoved", checkoutRemoved.toString())
+			}
+
+			const url = editingSite?.isNew 
+				? `${import.meta.env.VITE_API_URL}/api/site` 
+				: `${import.meta.env.VITE_API_URL}/api/site/${editingSite.id}`
+			
+			const response = await axios({
+				method: editingSite?.isNew ? "post" : "put",
+				url,
+				data: formPayload,
+				headers: { "Content-Type": "multipart/form-data" },
+			})
+
 			if(response.data.success){
 				toast.success(editingSite?.isNew ? "Site created successfully" : "Site updated successfully")
 				handleCancelEdit()
@@ -587,7 +649,7 @@ function Site() {
 						placeholder="Select status" error={backendErrors.status} />
 				</ThemeUI.FormField>
 			</div>
-			<ThemeUI.FormField label="Search by Pincode" name="pincode" error={backendErrors.pincode} required>
+			<ThemeUI.FormField label="Search by Pincode" name="pincode" error={backendErrors.pincode}>
 				<ThemeUI.AutoComplete id="pincode_autocomplete" name="pincode"
 					value={selectedPincode ? [selectedPincode] : []} loadOptions={loadPincodeOptions}
 					onChange={(selected) => {
@@ -610,7 +672,7 @@ function Site() {
 					placeholder="Type 6-digit pincode..." isMulti={false} minInputLength={0} cacheOptions />
 			</ThemeUI.FormField>
 			<div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-				<ThemeUI.FormField label="Full Address" name="full_address" error={backendErrors.full_address} required>
+				<ThemeUI.FormField label="Full Address" name="full_address" error={backendErrors.full_address}>
 					<ThemeUI.Textarea name="full_address" value={formData.full_address} onChange={handleInputChange}
 						rows={5} placeholder="Enter complete address" error={backendErrors.full_address} />
 				</ThemeUI.FormField>
@@ -619,6 +681,27 @@ function Site() {
 						rows={5} placeholder="Additional notes" error={backendErrors.notes} />
 				</ThemeUI.FormField>
 			</div>
+
+			<ThemeUI.FormField 
+				label="Site Checkout Photo" 
+				name="checkout_photo" 
+				error={backendErrors.checkout_photo}
+			>
+				<ThemeUI.FileInput
+					id="checkoutPhoto"
+					name="checkout_photo"
+					onChange={handleCheckoutPhotoChange}
+					accept="image/*"
+					preview={checkoutPreview}
+					onDelete={handleCheckoutPhotoDelete}
+					error={backendErrors.checkout_photo}
+					showDeleteIcon={true}
+				/>
+				<p className="text-xs text-gray-500 mt-1">
+					Upload a clear photo of the completed site (JPG/PNG recommended)
+				</p>
+			</ThemeUI.FormField>
+
 			<div className="flex justify-end gap-3 pt-6 border-t border-gray-200">
 				<ThemeUI.Button onClick={handleCancelEdit}
 					gradientColors={{ start: theme.secondaryGradientStart, end: theme.secondaryGradientEnd }}>
