@@ -7,9 +7,9 @@ import Layout from "./layout"
 import { useTheme } from "../context/themeContext"
 import { ThemeUI } from "../context/themeUI"
 import { ChevronRight, Loader, Edit, Search, Filter, Plus, Trash2 } from "lucide-react"
-import Modal from "./Modal"
-import Offcanvas from "./Offcanvas"
-import NoRowsOverlay from "./NoRowsOverlay"
+import Modal from "./modal"
+import Offcanvas from "./offcanvas"
+import NoRowsOverlay from "./noRowsOverlay"
 
 function Unit() {
 	const { theme } = useTheme()

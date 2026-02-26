@@ -5,11 +5,11 @@ import Layout from "./layout"
 import { useTheme } from "../context/themeContext"
 import { ThemeUI } from "../context/themeUI"
 import { ChevronRight, Loader, Edit, Search, Filter, Plus, Trash2 } from "lucide-react"
-import Modal from "./Modal"
-import Offcanvas from "./Offcanvas"
+import Modal from "./modal"
+import Offcanvas from "./offcanvas"
 import { AgGridReact } from "ag-grid-react"
 import { themeQuartz } from "ag-grid-community"
-import NoRowsOverlay from "./NoRowsOverlay"
+import NoRowsOverlay from "./noRowsOverlay"
 
 function Team() {
 	const { theme } = useTheme()

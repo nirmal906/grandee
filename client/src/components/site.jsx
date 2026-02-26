@@ -6,10 +6,10 @@ import Layout from "./layout"
 import { useTheme } from "../context/themeContext"
 import { ThemeUI } from "../context/themeUI"
 import { ChevronRight, Loader, Edit, Search, Filter, Plus, Trash2, Download, DollarSign, Eye } from "lucide-react"
-import Modal from "./Modal"
-import Offcanvas from "./Offcanvas"
+import Modal from "./modal"
+import Offcanvas from "./offcanvas"
 import { themeQuartz } from "ag-grid-community"
-import NoRowsOverlay from "./NoRowsOverlay"
+import NoRowsOverlay from "./noRowsOverlay"
 import { AgGridReact } from "ag-grid-react"
 import * as XLSX from 'xlsx'
 
