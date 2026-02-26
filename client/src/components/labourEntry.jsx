@@ -1,3 +1,4 @@
+import { useLocation } from 'react-router-dom';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import axios from "../utils/axios";
 import { toast } from "react-toastify";
@@ -13,6 +14,7 @@ import NoRowsOverlay from "./NoRowsOverlay";
 
 function LabourEntry() {
     const { theme } = useTheme();
+    const location = useLocation()
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [totalRows, setTotalRows] = useState(0);
@@ -89,6 +91,25 @@ function LabourEntry() {
         window.addEventListener("permissionsUpdated", handleUpdate);
         return () => window.removeEventListener("permissionsUpdated", handleUpdate);
     }, [getUserPermissions]);
+
+    useEffect(() => {
+        if (location.state?.openModal && location.state?.siteId) {
+            setEditingEntry({ isNew: true });
+            setFormData({
+                site_id: location.state.siteId,
+                labour_id: "",
+                date: "",
+                no_of_workers: "",
+                rate_per_worker: "",
+                debit_entry: "",
+                credit_entry: "",
+                status: 1,
+            });
+            setBackendErrors({});
+            setIsModalOpen(true);
+            window.history.replaceState({}, document.title);
+        }
+    }, [location.state]);
 
     const fetchActiveLabours = useCallback(async () => {
         try {
@@ -508,7 +529,7 @@ function LabourEntry() {
             <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-4">
                 <ThemeUI.FormField label="Site" name="site_id" error={backendErrors.site_id} required>
                     <ThemeUI.Select
-                        value={activeSites.find(s => s.id === formData.site_id) || null}
+                        value={formData.site_id}
                         onChange={(opt) => {
                             setFormData((prev) => ({ ...prev, site_id: opt?.value || "" }));
                             setBackendErrors((prev) => ({ ...prev, site_id: "" }));

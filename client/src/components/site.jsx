@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
-import axios from "axios"
+import axios from "../utils/axios";
 import { toast } from "react-toastify"
-import Layout from "./Layout"
+import { useNavigate, useLocation } from 'react-router-dom';  
+import Layout from "./layout"
 import { useTheme } from "../context/themeContext"
 import { ThemeUI } from "../context/themeUI"
 import { ChevronRight, Loader, Edit, Search, Filter, Plus, Trash2, Download, DollarSign, Eye } from "lucide-react"
@@ -25,6 +26,7 @@ const INITIAL_PAYMENT_STATE = {
 
 function Site() {
 	const { theme } = useTheme()
+	const location = useLocation();
 	const gridRef = useRef(null)
 	const [isModalOpen, setIsModalOpen] = useState(false)
 	const [isOffcanvasOpen, setIsOffcanvasOpen] = useState(false)
@@ -92,6 +94,29 @@ function Site() {
 		window.addEventListener('permissionsUpdated', handlePermissionsUpdate)
 		return () => window.removeEventListener('permissionsUpdated', handlePermissionsUpdate)
 	}, [getUserPermissions])
+
+	// Auto-open payment modal when navigated from Dashboard "Pay In"
+	useEffect(() => {
+		const state = location.state;
+		if (state?.openPayment && state?.siteId && sites.length > 0) {
+			const targetSite = sites.find(s => String(s.id) === String(state.siteId));
+			if (targetSite) {
+				// Load payment data silently in background
+				fetchPaymentSummary(targetSite.id);
+				fetchPayments(targetSite.id);
+				setSelectedSite(targetSite);
+
+				// Open Add Payment form directly — no history modal
+				setEditingPayment(null);
+				setPaymentFormData(INITIAL_PAYMENT_STATE);
+				setPaymentBackendErrors({});
+				setIsPaymentFormModalOpen(true);
+
+				// Clear state so refresh doesn't reopen
+				window.history.replaceState({}, document.title);
+			}
+		}
+	}, [location.state, sites]);
 
 	const loadPincodeOptions = useCallback((inputValue, callback) => {
 		if(!inputValue || inputValue.length < 6){

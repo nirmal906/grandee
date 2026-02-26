@@ -1,17 +1,16 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
-import axios from "axios"
+import axios from "../utils/axios"
 import { toast } from "react-toastify"
-import Layout from "./Layout"
+import Layout from "./layout"
 import { useTheme } from "../context/themeContext"
 import { ThemeUI } from "../context/themeUI"
-import { ChevronRight, Loader, Edit, Search, Filter, Plus, Trash2, Download } from "lucide-react"
+import { ChevronRight, MessageCircle, Loader, Edit, Search, Filter, Plus, Trash2, Download } from "lucide-react"
 import Modal from "./Modal"
-import Offcanvas from "./Offcanvas"
 import { themeQuartz } from "ag-grid-community"
 import NoRowsOverlay from "./NoRowsOverlay"
 import { AgGridReact } from "ag-grid-react"
 import * as XLSX from 'xlsx'
-
+import VendorTemplate from "../templates/vendor"
 const INITIAL_FORM_STATE = {
 	name			: "",
 	phone			: "",
@@ -25,8 +24,7 @@ const INITIAL_FORM_STATE = {
 	notes			: "",
 	post_office_name: ""
 }
-
-function Vendor() {
+function Vendor(){
 	const { theme } 								= useTheme()
 	const gridRef 									= useRef(null)
 	const [isModalOpen, setIsModalOpen] 			= useState(false)
@@ -46,6 +44,8 @@ function Vendor() {
 	const [isDeleting, setIsDeleting] 				= useState(false)
 	const words 									= ["vendor name", "location", "phone", "email"]
 	const [formData, setFormData] 					= useState(INITIAL_FORM_STATE)
+	const [whatsappVendor, setWhatsappVendor] 		= useState(null)
+	const [materials, setMaterials] 				= useState([])
 	const [vendorPermissions, setVendorPermissions] = useState({
 		can_add: false,
 		can_edit: false,
@@ -73,6 +73,19 @@ function Vendor() {
 			return { can_add: false, can_edit: false, can_delete: false, can_view: false }
 		}
 	}, [])
+
+	// Fetch material entries
+    const fetchActiveMaterials = async () => {
+        try{
+            const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/material-entry/active-materials`)
+            if(response.data.success){
+                setMaterials(response.data.data)
+            }
+        }catch(err){
+            console.error("Error fetching materials:", err)
+            toast.error("Failed to load materials")
+        }
+    }
 
 	useEffect(() => {
 		const permissions = getUserPermissions()
@@ -142,6 +155,7 @@ function Vendor() {
 
 	useEffect(() => {
 		fetchVendors()
+		fetchActiveMaterials()
 	}, [fetchVendors])
 
 	useEffect(() => {
@@ -324,27 +338,36 @@ function Vendor() {
 				headerName: "Actions",
 				cellRenderer: (params) => (
 					<div className="flex items-center gap-2">
-						{vendorPermissions.can_edit && (
-							<button
-								onClick={() => handleEditClick(params.data)}
-								className="p-1 text-blue-600 hover:text-blue-800 transition-colors"
-								title="Edit"
-							>
-								<Edit size={16} style={{ color: theme.primaryGradientStart }} />
-							</button>
-						)}
-						{vendorPermissions.can_delete && (
-							<button
-								onClick={() => handleDeleteClick(params.data)}
-								className="p-1 text-red-600 hover:text-red-800 transition-colors"
-								title="Delete"
-							>
-								<Trash2 size={16} />
-							</button>
-						)}
+					{/* ── WhatsApp Button ── */}
+					<button
+						onClick={() => setWhatsappVendor(params.data)}
+						title="Send WhatsApp"
+						className="p-1 hover:opacity-75 transition-opacity"
+					>
+						<MessageCircle size={16} style={{ color: "#25d366" }} />
+					</button>
+
+					{vendorPermissions.can_edit && (
+						<button
+						onClick={() => handleEditClick(params.data)}
+						className="p-1 text-blue-600 hover:text-blue-800 transition-colors"
+						title="Edit"
+						>
+						<Edit size={16} style={{ color: theme.primaryGradientStart }} />
+						</button>
+					)}
+					{vendorPermissions.can_delete && (
+						<button
+						onClick={() => handleDeleteClick(params.data)}
+						className="p-1 text-red-600 hover:text-red-800 transition-colors"
+						title="Delete"
+						>
+						<Trash2 size={16} />
+						</button>
+					)}
 					</div>
 				),
-				minWidth: 100,
+				minWidth: 130,
 				sortable: false,
 			})
 		}
@@ -569,6 +592,14 @@ function Vendor() {
 			>
 				{renderVendorForm()}
 			</Modal>
+			{whatsappVendor && (
+				<VendorTemplate
+					vendor={whatsappVendor}
+        			materials={materials}
+					siteName="Grandee Constructions"  
+					onClose={() => setWhatsappVendor(null)}
+				/>
+			)}
 		</Layout>
 	)
 }

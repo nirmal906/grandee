@@ -32,6 +32,7 @@ const User          = sequelize.define(
             type: DataTypes.STRING,
             allowNull: true
         },
+        site_ids: DataTypes.STRING(255),
         remember_token: {
             type: DataTypes.STRING,
             allowNull: true

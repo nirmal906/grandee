@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
-import axios from "axios"
+import axios from "../utils/axios";
 import { toast } from "react-toastify"
 import { AgGridReact } from "ag-grid-react"
 import { themeQuartz } from "ag-grid-community"

@@ -43,10 +43,11 @@ const authController = {
                 include: [
                     {
                         model: UserRole,
-                        as: 'userRoles',  // Make sure this alias matches your index.js
+                        as: 'userRoles',  
                         include: [
                             {
                                 model: Role,
+                                as: 'role',  
                                 attributes: ['id', 'name'],
                             }
                         ]
@@ -63,7 +64,7 @@ const authController = {
                 });
             }
 
-            const role = user.userRoles[0]?.Role?.name || 'user';
+            const role = user.userRoles[0]?.role?.name || 'user';
 
             // Generate new tokens
             const payload = {

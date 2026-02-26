@@ -19,6 +19,13 @@ router.get('/dashboard/transactions', authMiddleware, actionController.getTransa
 router.get('/dashboard/material-pending', authMiddleware, actionController.getMaterialPending);
 router.get('/dashboard/labour-pending', authMiddleware, actionController.getLabourPending);
 
+// SITE SUMMARY ROUTES
+router.get('/dashboard/site-summary', authMiddleware, actionController.getSiteSummary);
+router.get('/dashboard/payout-pending/:site_id', authMiddleware, actionController.getSitePayoutPending);
+router.patch('/material-entry/:entry_id/mark-paid', authMiddleware, actionController.markMaterialEntryPaid);
+router.patch('/labour-entry/:entry_id/mark-paid', authMiddleware, actionController.markLabourEntryPaid);
+
+
 // SEARCH POST OFFICES BY PINCODE
 router.get('/search/pincode/:pincode', async (req, res) => {
     try{

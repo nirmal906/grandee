@@ -4,6 +4,7 @@ const { sequelize } = require('../config/db');
 const fs = require('fs');
 const path = require('path');
 const BASE_URL = process.env.BASE_URL || 'http://localhost:5000';
+const { resolveAllowedSiteIds } = require('./actionController');
 
 const siteController = {
     
@@ -19,6 +20,15 @@ const siteController = {
                 status,
                 search
             } = req.query;
+            const allowedIds = await resolveAllowedSiteIds(req.user);
+            console.log(req.user);
+            if(allowedIds.length === 0){
+                return res.status(200).json({
+                    success: true,
+                    data: [],
+                    meta: { total: 0, page: 1, limit: 10, totalPages: 0 }
+                });
+            }
 
             const pageNum  = parseInt(page, 10);
             const limitNum = Math.min(parseInt(limit, 10), 100);
@@ -36,7 +46,9 @@ const siteController = {
             const sortOrder  = validOrder.includes(order.toLowerCase()) ? order.toUpperCase() : 'DESC';
 
             const whereClause = {};
-
+            whereClause = {
+                id: { [Op.in]: allowedIds }
+            };
             if (include_inactive !== 'true') {
                 whereClause.is_active = true;
             }

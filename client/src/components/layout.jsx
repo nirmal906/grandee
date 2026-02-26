@@ -418,65 +418,6 @@ function Layout({ children, selectedSite, siteName }){
 							)}
 						</div>
 						<div className="flex items-center gap-4">
-							{/* Entry Buttons - Show only when selectedSite is provided */}
-							{selectedSite && (
-								<div className="hidden md:flex items-center gap-2">
-									<ThemeUI.Button
-										type="button"
-										onClick={() => navigate('/materialentry', { 
-											state: { 
-												openModal: true, 
-												siteId: selectedSite 
-											} 
-										})}
-										gradientColors={{
-											start: theme.primaryGradientStart,
-											end: theme.primaryGradientEnd,
-										}}
-										direction={theme.gradientDirection}
-										className="px-3 py-1.5 text-xs transition-all duration-200 hover:scale-105 flex items-center gap-1.5"
-									>
-										<Package className="h-3.5 w-3.5 me-2" />
-										Material Entry
-									</ThemeUI.Button>
-									<ThemeUI.Button
-										type="button"
-										onClick={() => navigate('/labourentry', { state: { siteId: selectedSite } })}
-										gradientColors={{
-											start: theme.primaryGradientStart,
-											end: theme.primaryGradientEnd,
-										}}
-										direction={theme.gradientDirection}
-										className="px-3 py-1.5 text-xs transition-all duration-200 hover:scale-105 flex items-center gap-1.5"
-									>
-										<Users className="h-3.5 w-3.5 me-2" />
-										Labour Entry
-									</ThemeUI.Button>
-								</div>
-							)}
-
-							{/* Mobile Entry Buttons */}
-							{selectedSite && (
-								<div className="md:hidden flex items-center gap-2">
-									<button
-										onClick={() => navigate('/materialentry', { state: { siteId: selectedSite } })}
-										className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-										style={{ color: theme.primaryGradientStart }}
-										title="Material Entry"
-									>
-										<Package className="h-5 w-5" />
-									</button>
-									<button
-										onClick={() => navigate('/labourentry', { state: { siteId: selectedSite } })}
-										className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-										style={{ color: theme.primaryGradientStart }}
-										title="Labour Entry"
-									>
-										<Users className="h-5 w-5" />
-									</button>
-								</div>
-							)}
-
 							{/* User Profile Section */}
 							<div className="flex items-center">
 								<div className="hidden sm:flex items-center gap-3">

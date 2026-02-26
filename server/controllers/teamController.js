@@ -134,6 +134,7 @@ const teamController           = {
                 gender, 
                 password, 
                 status, 
+                site_ids,
                 role
             } = req.body;
             const errors = {};
@@ -229,6 +230,7 @@ const teamController           = {
                 mobile     : mobile.trim(),
                 gender,
                 password   : hashedPassword,
+                site_ids   : site_ids,
                 status     : status !== undefined ? Number(status) : 1,
                 created_at : new Date(),
                 updated_at : new Date()
@@ -272,7 +274,8 @@ const teamController           = {
                 gender, 
                 password, 
                 status, 
-                role
+                role,
+                site_ids
             } = req.body;
             // Check if user exists
             const user = await User.findByPk(id, { transaction });
@@ -383,6 +386,7 @@ const teamController           = {
             if(email !== undefined) updateData.email         = email.trim().toLowerCase();
             if(mobile !== undefined) updateData.mobile       = mobile.trim();
             if(gender !== undefined) updateData.gender       = gender;
+            if(site_ids !== undefined) updateData.site_ids   = site_ids;
             if(password) updateData.password                 = await bcrypt.hash(password.trim(), 10);
             if(status !== undefined) updateData.status       = Number(status);
             await user.update(updateData, { transaction });
