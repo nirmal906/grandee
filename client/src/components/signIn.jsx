@@ -47,7 +47,7 @@ export default function SignIn(){
                 password,
                 rememberMe
             };
-            const response = await axios.post(`${import.meta.env.VITE_API_URL}/api/login`, payload);
+            const response = await axios.post(`/api/login`,payload);
             if(response.data.success){
                 localStorage.setItem('adminAccessToken', response.data.accessToken);
                 localStorage.setItem('adminRefreshToken', response.data.refreshToken);

@@ -87,7 +87,7 @@ function Material() {
 	// Fetch active units for dropdown & filter
 	const fetchUnits = async () => {
 		try {
-			const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/unit/list`)
+			const response = await axios.get(`/api/unit/list`)
 			if (response.data.success) {
 				setUnits(response.data.data)
 			}
@@ -101,7 +101,7 @@ function Material() {
 	const fetchMaterials = useCallback(async () => {
 		setIsLoading(true)
 		try {
-			const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/material`, {
+			const response = await axios.get(`/api/material`, {
 				params: {
 					page: currentPage,
 					limit: perPage,
@@ -186,8 +186,8 @@ function Material() {
 		setIsLoading(true)
 		try {
 			const url = editingMaterial?.isNew
-				? `${import.meta.env.VITE_API_URL}/api/material`
-				: `${import.meta.env.VITE_API_URL}/api/material/${editingMaterial.id}`
+				? `/api/material`
+				: `/api/material/${editingMaterial.id}`
 			const method = editingMaterial?.isNew ? "post" : "put"
 
 			const response = await axios[method](url, formData)
@@ -213,7 +213,7 @@ function Material() {
 
 		setIsLoading(true)
 		try {
-			const response = await axios.delete(`${import.meta.env.VITE_API_URL}/api/material/${material.id}`)
+			const response = await axios.delete(`/api/material/${material.id}`)
 			if (response.data.success) {
 				toast.success("Material deleted successfully")
 				fetchMaterials()

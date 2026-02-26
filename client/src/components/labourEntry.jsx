@@ -113,7 +113,7 @@ function LabourEntry() {
 
     const fetchActiveLabours = useCallback(async () => {
         try {
-            const res = await axios.get(`${import.meta.env.VITE_API_URL}/api/labour-entry/active-labours`);
+            const res = await axios.get(`/api/labour-entry/active-labours`);
             if (res.data.success) {
                 setActiveLabours(res.data.data);
             }
@@ -124,7 +124,7 @@ function LabourEntry() {
 
     const fetchActiveSites = useCallback(async () => {
         try {
-            const res = await axios.get(`${import.meta.env.VITE_API_URL}/api/dashboard/sites`);
+            const res = await axios.get(`/api/dashboard/sites`);
             if (res.data.success) {
                 setActiveSites(res.data.data);
             }
@@ -136,7 +136,7 @@ function LabourEntry() {
     const fetchLabourEntries = useCallback(async () => {
         setIsLoading(true);
         try {
-            const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/labour-entry`, {
+            const response = await axios.get(`/api/labour-entry`, {
                 params: {
                     page: currentPage,
                     limit: perPage,
@@ -298,8 +298,8 @@ function LabourEntry() {
         setIsLoading(true);
         try {
             const url = editingEntry?.isNew
-                ? `${import.meta.env.VITE_API_URL}/api/labour-entry`
-                : `${import.meta.env.VITE_API_URL}/api/labour-entry/${editingEntry.id}`;
+                ? `/api/labour-entry`
+                : `/api/labour-entry/${editingEntry.id}`;
             const method = editingEntry?.isNew ? "post" : "put";
 
             const response = await axios[method](url, formData);
@@ -324,7 +324,7 @@ function LabourEntry() {
         if (!window.confirm("Are you sure you want to delete this labour entry?")) return;
         setIsLoading(true);
         try {
-            await axios.delete(`${import.meta.env.VITE_API_URL}/api/labour-entry/${id}`);
+            await axios.delete(`/api/labour-entry/${id}`);
             toast.success("Labour entry deleted successfully");
             fetchLabourEntries();
         } catch (err) {

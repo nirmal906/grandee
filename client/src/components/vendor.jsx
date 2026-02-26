@@ -77,7 +77,7 @@ function Vendor(){
 	// Fetch material entries
     const fetchActiveMaterials = async () => {
         try{
-            const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/material-entry/active-materials`)
+            const response = await axios.get(`/api/material-entry/active-materials`)
             if(response.data.success){
                 setMaterials(response.data.data)
             }
@@ -107,7 +107,7 @@ function Vendor(){
 			return
 		}
 		if(/^\d{6}$/.test(inputValue)){
-			axios.get(`${import.meta.env.VITE_API_URL}/api/search/pincode/${inputValue}`)
+			axios.get(`/api/search/pincode/${inputValue}`)
 			.then(response => {
 				if(response.data.success && response.data.data.length > 0){
 					const options = response.data.data.map(po => ({
@@ -132,7 +132,7 @@ function Vendor(){
 	const fetchVendors = useCallback(async () => {
 		setIsLoading(true)
 		try{
-			const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/vendor`, {
+			const response = await axios.get(`/api/vendor`, {
 				params: {
 					page: currentPage,
 					limit: perPage,
@@ -264,7 +264,7 @@ function Vendor(){
 	const handleSaveVendor = async () => {
 		setIsLoading(true)
 		try{
-			const url 	  = editingVendor?.isNew ? `${import.meta.env.VITE_API_URL}/api/vendor` : `${import.meta.env.VITE_API_URL}/api/vendor/${editingVendor.id}`
+			const url 	  = editingVendor?.isNew ? `/api/vendor` : `/api/vendor/${editingVendor.id}`
 			const method  = editingVendor?.isNew ? "post" : "put"
 			const response = await axios[method](url, formData)
 			if(response.data.success){
@@ -288,7 +288,7 @@ function Vendor(){
 		if(!window.confirm("Are you sure you want to delete this vendor?")) return
 		setIsLoading(true)
 		try{
-			await axios.delete(`${import.meta.env.VITE_API_URL}/api/vendor/${vendor.id}`)
+			await axios.delete(`/api/vendor/${vendor.id}`)
 			toast.success("Vendor deleted successfully")
 			fetchVendors()
 		}catch(err){

@@ -124,7 +124,7 @@ function Site() {
 			return
 		}
 		if(/^\d{6}$/.test(inputValue)){
-			axios.get(`${import.meta.env.VITE_API_URL}/api/search/pincode/${inputValue}`)
+			axios.get(`/api/search/pincode/${inputValue}`)
 			.then(response => {
 				if(response.data.success && response.data.data.length > 0){
 					const options = response.data.data.map(po => ({
@@ -149,7 +149,7 @@ function Site() {
 	const fetchSites = useCallback(async () => {
 		setIsLoading(true)
 		try{
-			const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/site`, {
+			const response = await axios.get(`/api/site`, {
 				params: {
 					page: currentPage,
 					limit: perPage,
@@ -173,7 +173,7 @@ function Site() {
 
 	const fetchPaymentSummary = useCallback(async (siteId) => {
 		try{
-			const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/site-payment/${siteId}/summary`)
+			const response = await axios.get(`/api/site-payment/${siteId}/summary`)
 			if(response.data.success){
 				setPaymentSummary(response.data.data)
 			}
@@ -186,7 +186,7 @@ function Site() {
 	const fetchPayments = useCallback(async (siteId) => {
 		setIsLoading(true)
 		try{
-			const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/site-payment/${siteId}/payments`, {
+			const response = await axios.get(`/api/site-payment/${siteId}/payments`, {
 				params: { page: 1, limit: 100 }
 			})
 			if(response.data.success){
@@ -352,8 +352,8 @@ function Site() {
 			}
 
 			const url = editingSite?.isNew 
-				? `${import.meta.env.VITE_API_URL}/api/site` 
-				: `${import.meta.env.VITE_API_URL}/api/site/${editingSite.id}`
+				? `/api/site` 
+				: `/api/site/${editingSite.id}`
 			
 			const response = await axios({
 				method: editingSite?.isNew ? "post" : "put",
@@ -383,7 +383,7 @@ function Site() {
 		if(!window.confirm("Are you sure you want to delete this site?")) return
 		setIsLoading(true)
 		try{
-			await axios.delete(`${import.meta.env.VITE_API_URL}/api/site/${site.id}`)
+			await axios.delete(`/api/site/${site.id}`)
 			toast.success("Site deleted successfully")
 			fetchSites()
 		}catch(err){
@@ -436,8 +436,8 @@ function Site() {
 		setIsLoading(true)
 		try{
 			const url = editingPayment 
-				? `${import.meta.env.VITE_API_URL}/api/site-payment/${selectedSite.id}/payments/${editingPayment.id}`
-				: `${import.meta.env.VITE_API_URL}/api/site-payment/${selectedSite.id}/payments`
+				? `/api/site-payment/${selectedSite.id}/payments/${editingPayment.id}`
+				: `/api/site-payment/${selectedSite.id}/payments`
 			const method = editingPayment ? "put" : "post"
 			const response = await axios[method](url, paymentFormData)
 			
@@ -464,7 +464,7 @@ function Site() {
 		if(!window.confirm("Are you sure you want to cancel this payment?")) return
 		setIsLoading(true)
 		try{
-			await axios.delete(`${import.meta.env.VITE_API_URL}/api/site-payment/${selectedSite.id}/payments/${payment.id}`)
+			await axios.delete(`/api/site-payment/${selectedSite.id}/payments/${payment.id}`)
 			toast.success("Payment cancelled successfully")
 			await fetchPaymentSummary(selectedSite.id)
 			await fetchPayments(selectedSite.id)

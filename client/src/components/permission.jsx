@@ -91,7 +91,7 @@ function Permission() {
 		setIsLoading(true)
 		try {
 		const response = await axios.get(
-			`${import.meta.env.VITE_API_URL}/api/permission`,
+			`/api/permission`,
 			{
 			params: {
 				page: currentPage,
@@ -117,7 +117,7 @@ function Permission() {
 	const fetchRolePermissions = async (roleId) => {
 		try {
 		const response = await axios.get(
-			`${import.meta.env.VITE_API_URL}/api/permission/role/${roleId}`
+			`/api/permission/role/${roleId}`
 		)
 		if (response.data.success) {
 			setPermissions(response.data.data)
@@ -178,7 +178,7 @@ function Permission() {
 		}))
 
 		await axios.put(
-			`${import.meta.env.VITE_API_URL}/api/permission/role/${
+			`/api/permission/role/${
 			selectedRole.id
 			}`,
 			{ permissions: permissionData }

@@ -101,7 +101,7 @@ function Role() {
     const fetchRoles = useCallback(async () => {
         setIsLoading(true)
         try {
-            const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/role`, {
+            const response = await axios.get(`/api/role`, {
                 params: { search: searchQuery, page: 1, limit: 1000, sortBy: 'name', sortOrder: 'ASC' }
             })
             if (response.data.success) {
@@ -149,8 +149,8 @@ function Role() {
         setIsLoading(true)
         try {
             const url = editingRole?.isNew
-                ? `${import.meta.env.VITE_API_URL}/api/role`
-                : `${import.meta.env.VITE_API_URL}/api/role/${editingRole.id}`
+                ? `/api/role`
+                : `/api/role/${editingRole.id}`
             const method = editingRole?.isNew ? "post" : "put"
             const response = await axios[method](url, { name: formData.name.trim() })
             
@@ -186,7 +186,7 @@ function Role() {
 
         setIsLoading(true)
         try {
-            const response = await axios.delete(`${import.meta.env.VITE_API_URL}/api/role/${role.id}`)
+            const response = await axios.delete(`/api/role/${role.id}`)
             if (response.data.success) {
                 toast.success("Role deleted successfully")
                 fetchRoles()

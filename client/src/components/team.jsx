@@ -151,7 +151,7 @@ function Team() {
 
 	const fetchRoles = async () => {
 		try {
-			const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/team/roles`)
+			const response = await axios.get(`/api/team/roles`)
 			if (response.data.success) setRoles(response.data.data)
 		} catch (err) {
 			console.error("Error fetching roles:", err)
@@ -161,7 +161,7 @@ function Team() {
 
 	const fetchSites = async () => {
 		try {
-			const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/dashboard/sites`)
+			const response = await axios.get(`/api/dashboard/sites`)
 			if (response.data.success) setSites(response.data.data)
 		} catch (err) {
 			console.error("Error fetching sites:", err)
@@ -172,7 +172,7 @@ function Team() {
 	const fetchUsers = useCallback(async () => {
 		setIsLoading(true)
 		try {
-			const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/team`, {
+			const response = await axios.get(`/api/team`, {
 				params: {
 					page:   currentPage,
 					limit:  perPage,
@@ -235,8 +235,8 @@ function Team() {
 		try {
 			const isNew  = editingUser?.isNew
 			const url    = isNew
-				? `${import.meta.env.VITE_API_URL}/api/team`
-				: `${import.meta.env.VITE_API_URL}/api/team/${editingUser.id}`
+				? `/api/team`
+				: `/api/team/${editingUser.id}`
 			const method = isNew ? "post" : "put"
 
 			const submitData = {
@@ -282,7 +282,7 @@ function Team() {
 		if (!window.confirm(`Are you sure you want to delete team member ${user.name}?`)) return
 		setIsLoading(true)
 		try {
-			const response = await axios.delete(`${import.meta.env.VITE_API_URL}/api/team/${user.id}`)
+			const response = await axios.delete(`/api/team/${user.id}`)
 			if (response.data.success) {
 				toast.success("Team member deleted successfully")
 				fetchUsers()

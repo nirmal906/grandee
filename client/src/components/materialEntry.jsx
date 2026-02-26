@@ -140,7 +140,7 @@ function MaterialEntry() {
     // Fetch active sites
     const fetchActiveSites = async () => {
         try {
-            const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/dashboard/sites`)
+            const response = await axios.get(`/api/dashboard/sites`)
             if (response.data.success) {
                 setSites(response.data.data)
             }
@@ -153,7 +153,7 @@ function MaterialEntry() {
     // Fetch active materials
     const fetchActiveMaterials = async () => {
         try {
-            const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/material-entry/active-materials`)
+            const response = await axios.get(`/api/material-entry/active-materials`)
             if (response.data.success) {
                 setMaterials(response.data.data)
             }
@@ -166,7 +166,7 @@ function MaterialEntry() {
     // Fetch active vendors
     const fetchActiveVendors = async () => {
         try {
-            const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/material-entry/active-vendors`)
+            const response = await axios.get(`/api/material-entry/active-vendors`)
             if (response.data.success) {
                 setVendors(response.data.data)
             }
@@ -180,7 +180,7 @@ function MaterialEntry() {
     const fetchMaterialEntries = useCallback(async () => {
         setIsLoading(true)
         try {
-            const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/material-entry`, {
+            const response = await axios.get(`/api/material-entry`, {
                 params: {
                     page: currentPage,
                     limit: perPage,
@@ -304,7 +304,7 @@ function MaterialEntry() {
         setHistoryLoading(true)
         try {
             const response = await axios.get(
-                `${import.meta.env.VITE_API_URL}/api/material-entry/${entry.id}/history`
+                `/api/material-entry/${entry.id}/history`
             )
             if (response.data.success) {
                 setSelectedEntryHistory(response.data.data)
@@ -554,7 +554,7 @@ function MaterialEntry() {
         })
         setInvoicePreview(
             entry.invoice_photo
-                ? `${import.meta.env.VITE_API_URL}/uploads/material-entries/${entry.invoice_photo}`
+                ? `/uploads/material-entries/${entry.invoice_photo}`
                 : null
         )
         setInvoiceRemoved(false)
@@ -582,8 +582,8 @@ function MaterialEntry() {
             }
 
             const url = editingEntry?.isNew
-                ? `${import.meta.env.VITE_API_URL}/api/material-entry`
-                : `${import.meta.env.VITE_API_URL}/api/material-entry/${editingEntry.id}`
+                ? `/api/material-entry`
+                : `/api/material-entry/${editingEntry.id}`
 
             const response = await axios({
                 method: editingEntry?.isNew ? "post" : "put",
@@ -618,7 +618,7 @@ function MaterialEntry() {
 
         setIsLoading(true)
         try {
-            const response = await axios.delete(`${import.meta.env.VITE_API_URL}/api/material-entry/${entry.id}`)
+            const response = await axios.delete(`/api/material-entry/${entry.id}`)
             if (response.data.success) {
                 toast.success("Material entry deleted successfully")
                 fetchMaterialEntries()
@@ -833,7 +833,7 @@ function MaterialEntry() {
                 width: 100,
                 cellRenderer: (params) => {
                     if (!params.data?.invoice_photo) return "—"
-                    const url = `${import.meta.env.VITE_API_URL}/uploads/material-entries/${params.data.invoice_photo}`
+                    const url = `/uploads/material-entries/${params.data.invoice_photo}`
                     return (
                         <a
                             href={url}

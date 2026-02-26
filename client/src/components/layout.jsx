@@ -78,7 +78,7 @@ function Layout({ children, selectedSite, siteName }){
 		const user = getCurrentUser();
 		if(!user?.id) return;
 		try{
-			const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/permission/user/${user.id}`);
+			const response = await axios.get(`/api/permission/user/${user.id}`);
 			console.log(response.data);
 			if(response.data.success){
 				const permMap = {};

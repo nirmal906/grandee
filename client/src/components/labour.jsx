@@ -87,7 +87,7 @@ function Labour() {
         isFetching.current = true
         setIsLoading(true)
         try {
-            const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/labour`, {
+            const response = await axios.get(`/api/labour`, {
                 params: {
                     page: currentPage,
                     limit: pageSize,
@@ -181,8 +181,8 @@ function Labour() {
         setIsLoading(true)
         try {
             const url = editingLabour?.isNew
-                ? `${import.meta.env.VITE_API_URL}/api/labour`
-                : `${import.meta.env.VITE_API_URL}/api/labour/${editingLabour.id}`
+                ? `/api/labour`
+                : `/api/labour/${editingLabour.id}`
             const method = editingLabour?.isNew ? "post" : "put"
             const submitData = {
                 name: formData.name,
@@ -212,7 +212,7 @@ function Labour() {
         if (!window.confirm("Are you sure you want to delete this labour?")) return
         setIsLoading(true)
         try {
-            const response = await axios.delete(`${import.meta.env.VITE_API_URL}/api/labour/${id}`)
+            const response = await axios.delete(`/api/labour/${id}`)
             if (response.data.success) {
                 toast.success("Labour deleted successfully")
                 fetchLabours()

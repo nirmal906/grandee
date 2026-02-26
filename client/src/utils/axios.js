@@ -76,11 +76,7 @@ apiAdmin.interceptors.response.use(
 
             try{
                 // Call refresh token endpoint
-                const response = await axios.post(
-                    `${import.meta.env.VITE_API_URL}/api/refresh/token`,
-                    { refreshToken }
-                );
-
+                const response = await axios.post(`/api/refresh/token`,{ refreshToken });
                 // Directly destructure from response.data (matches backend response shape)
                 const { accessToken, refreshToken: newRefreshToken } = response.data;
 

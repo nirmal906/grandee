@@ -84,7 +84,7 @@ function Unit() {
 	const fetchUnits = useCallback(async () => {
 		setIsLoading(true)
 		try {
-			const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/unit`, {
+			const response = await axios.get(`/api/unit`, {
 				params: {
 					page: currentPage,
 					limit: perPage,
@@ -162,8 +162,8 @@ function Unit() {
 		setIsLoading(true)
 		try {
 			const url = editingUnit?.isNew
-				? `${import.meta.env.VITE_API_URL}/api/unit`
-				: `${import.meta.env.VITE_API_URL}/api/unit/${editingUnit.id}`
+				? `/api/unit`
+				: `/api/unit/${editingUnit.id}`
 			const method = editingUnit?.isNew ? "post" : "put"
 
 			const response = await axios[method](url, formData)
@@ -189,7 +189,7 @@ function Unit() {
 
 		setIsLoading(true)
 		try {
-			const response = await axios.delete(`${import.meta.env.VITE_API_URL}/api/unit/${unit.id}`)
+			const response = await axios.delete(`/api/unit/${unit.id}`)
 			if (response.data.success) {
 				toast.success("Unit deleted successfully")
 				fetchUnits()

@@ -43,7 +43,7 @@ function PayOutModal({ site, onClose, onSuccess, theme }) {
 		try {
 			const token = localStorage.getItem('accessToken');
 			const res = await axios.get(
-				`${import.meta.env.VITE_API_URL}/api/dashboard/payout-pending/${site.id}`,
+				`/api/dashboard/payout-pending/${site.id}`,
 				{ headers: { Authorization: `Bearer ${token}` } }
 			);
 			if (res.data.success) setData(res.data);
@@ -62,8 +62,8 @@ function PayOutModal({ site, onClose, onSuccess, theme }) {
 		try {
 			const token = localStorage.getItem('accessToken');
 			const url = entry.type === 'material'
-				? `${import.meta.env.VITE_API_URL}/api/material-entry/${entry.id}/mark-paid`
-				: `${import.meta.env.VITE_API_URL}/api/labour-entry/${entry.id}/mark-paid`;
+				? `/api/material-entry/${entry.id}/mark-paid`
+				: `/api/labour-entry/${entry.id}/mark-paid`;
 			const res = await axios.patch(url, {}, { headers: { Authorization: `Bearer ${token}` } });
 			if (res.data.success) { await fetchPending(); onSuccess(); }
 		} catch (err) {
@@ -285,7 +285,7 @@ function Dashboard() {
 	const fetchSites = useCallback(async () => {
 		try {
 			const token = localStorage.getItem('accessToken');
-			const res   = await axios.get(`${import.meta.env.VITE_API_URL}/api/dashboard/sites`, {
+			const res   = await axios.get(`/api/dashboard/sites`, {
 				headers: { Authorization: `Bearer ${token}` }
 			});
 			if (res.data.success) setSites(res.data.data || []);
@@ -299,7 +299,7 @@ function Dashboard() {
 			const token  = localStorage.getItem('accessToken');
 			const params = { from_date: from, to_date: to };
 			if (site) params.site_id = site;
-			const res = await axios.get(`${import.meta.env.VITE_API_URL}/api/dashboard/stats`, {
+			const res = await axios.get(`/api/dashboard/stats`, {
 				headers: { Authorization: `Bearer ${token}` }, params
 			});
 			if (res.data.success) setDashboardData(res.data.data);
@@ -313,7 +313,7 @@ function Dashboard() {
 			const token  = localStorage.getItem('accessToken');
 			const params = { from_date: from, to_date: to };
 			if (site) params.site_id = site;
-			const res = await axios.get(`${import.meta.env.VITE_API_URL}/api/dashboard/transactions`, {
+			const res = await axios.get(`/api/dashboard/transactions`, {
 				headers: { Authorization: `Bearer ${token}` }, params
 			});
 			if (res.data.success) setTransactions(res.data.data || []);
@@ -325,7 +325,7 @@ function Dashboard() {
 			const token  = localStorage.getItem('accessToken');
 			const params = { from_date: from, to_date: to };
 			if (site) params.site_id = site;
-			const res = await axios.get(`${import.meta.env.VITE_API_URL}/api/dashboard/material-pending`, {
+			const res = await axios.get(`/api/dashboard/material-pending`, {
 				headers: { Authorization: `Bearer ${token}` }, params
 			});
 			if (res.data.success) {
@@ -340,7 +340,7 @@ function Dashboard() {
 			const token  = localStorage.getItem('accessToken');
 			const params = { from_date: from, to_date: to };
 			if (site) params.site_id = site;
-			const res = await axios.get(`${import.meta.env.VITE_API_URL}/api/dashboard/labour-pending`, {
+			const res = await axios.get(`/api/dashboard/labour-pending`, {
 				headers: { Authorization: `Bearer ${token}` }, params
 			});
 			if (res.data.success) {
@@ -358,7 +358,7 @@ function Dashboard() {
 			// Pass the site_id argument if provided, otherwise fall back to selectedSite
 			const activeSite = site !== undefined ? site : selectedSite;
 			if (activeSite) params.site_id = activeSite;
-			const res = await axios.get(`${import.meta.env.VITE_API_URL}/api/dashboard/site-summary`, {
+			const res = await axios.get(`/api/dashboard/site-summary`, {
 				headers: { Authorization: `Bearer ${token}` }, params
 			});
 			if (res.data.success) setSiteSummary(res.data.data || []);
