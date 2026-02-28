@@ -5,13 +5,14 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import Layout from "./layout"
 import { useTheme } from "../context/themeContext"
 import { ThemeUI } from "../context/themeUI"
-import { ChevronRight, Loader, Edit, Search, Filter, Plus, Trash2, Download, DollarSign, Eye } from "lucide-react"
+import { ChevronRight, Loader, Edit, Search, Filter, Plus, Trash2, Download, MessageCircle, Eye } from "lucide-react"
 import Modal from "./modal"
 import Offcanvas from "./offcanvas"
 import { themeQuartz } from "ag-grid-community"
 import NoRowsOverlay from "./noRowsOverlay"
 import { AgGridReact } from "ag-grid-react"
 import * as XLSX from 'xlsx'
+import SiteTemplate from "../templates/site"
 
 const INITIAL_FORM_STATE = {
 	name: "", client_name: "", client_mobile: "", pincode: "", district: "", state: "", region: "", 
@@ -32,6 +33,7 @@ function Site() {
 	const [isOffcanvasOpen, setIsOffcanvasOpen] = useState(false)
 	const [isLoading, setIsLoading] = useState(false)
 	const [totalRows, setTotalRows] = useState(0)
+	const [whatsappSite, setWhatsappSite] = useState(null)
 	const [perPage, setPerPage] = useState(10)
 	const [currentPage, setCurrentPage] = useState(1)
 	const [sites, setSites] = useState([])
@@ -538,6 +540,13 @@ function Site() {
 			cellRenderer: (params) => (
 				<div className="flex items-center gap-2">
 					<button
+						onClick={() => setWhatsappSite(params.data)}
+						title="Send WhatsApp"
+						className="p-1 hover:opacity-75 transition-opacity"
+					>
+						<MessageCircle size={16} style={{ color: "#25d366" }} />
+					</button>
+					<button
 						onClick={() => handleViewPayments(params.data)}
 						className="p-1 text-green-600 hover:text-green-800 transition-colors"
 						title="View Payments"
@@ -967,6 +976,12 @@ function Site() {
 					</div>
 				</div>
 			</Offcanvas>
+			{whatsappSite && (
+				<SiteTemplate
+					site={whatsappSite}
+					onClose={() => setWhatsappSite(null)}
+				/>
+			)}
 		</Layout>
 	)
 }

@@ -45,8 +45,7 @@ const siteController = {
             const sortField  = validSortFields.includes(sort) ? sort : 'created_at';
             const sortOrder  = validOrder.includes(order.toLowerCase()) ? order.toUpperCase() : 'DESC';
 
-            const whereClause = {};
-            whereClause = {
+            const whereClause = {
                 id: { [Op.in]: allowedIds }
             };
             if (include_inactive !== 'true') {

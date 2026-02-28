@@ -421,6 +421,17 @@ Labour.hasMany(LabourEntry, {
     as: 'labourEntries'
 });
 
+// LABOUR ENTRY - VENDOR ASSOCIATIONS
+LabourEntry.belongsTo(Vendor, {
+    foreignKey: 'vendor_id',
+    as: 'vendor'
+});
+
+Vendor.hasMany(LabourEntry, {
+    foreignKey: 'vendor_id',
+    as: 'vendorLabourEntries'  
+});
+
 // LABOUR ENTRY AUDIT FIELDS
 LabourEntry.belongsTo(User, {
     foreignKey: 'created_by',

@@ -540,23 +540,8 @@ function Dashboard() {
 	const siteSummaryColumnDefs = useMemo(() => [
 		{ headerName: '#', width: 60, sortable: false, pinned: 'left', valueGetter: (p) => (p.node.rowIndex ?? 0) + 1 },
 		{ headerName: 'Site',   field: 'name',   sortable: true, flex: 1, minWidth: 150 },
-		{
-			headerName: 'Status', field: 'status', sortable: true, width: 120,
-			cellRenderer: (p) => {
-				const map = {
-					planning:  'bg-amber-100 text-amber-800',
-					active:    'bg-emerald-100 text-emerald-800',
-					completed: 'bg-blue-100 text-blue-800',
-				};
-				return (
-					<span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${map[p.value] || 'bg-gray-100 text-gray-800'}`}>
-						{p.value?.charAt(0).toUpperCase() + p.value?.slice(1)}
-					</span>
-				);
-			},
-		},
 		{ headerName: 'Start Date',    field: 'start_date',    sortable: true, width: 130, valueFormatter: formatDateGrid },
-		{ headerName: 'End Date',      field: 'end_date',      sortable: true, width: 130, valueFormatter: formatDateGrid },
+		// { headerName: 'End Date',      field: 'end_date',      sortable: true, width: 130, valueFormatter: formatDateGrid },
 		{ headerName: 'Budget',        field: 'total_budget',  sortable: true, width: 140, valueFormatter: formatCurrencyGrid, cellStyle: { fontWeight: '600' } },
 		{ headerName: 'Total Expense', field: 'total_expense', sortable: true, width: 150, valueFormatter: formatCurrencyGrid, cellStyle: { color: '#b45309', fontWeight: '600' } },
 		{ headerName: 'Client Paid',   field: 'client_paid',   sortable: true, width: 140, valueFormatter: formatCurrencyGrid, cellStyle: { color: '#059669', fontWeight: '600' } },
@@ -565,20 +550,35 @@ function Dashboard() {
 			valueFormatter: formatCurrencyGrid,
 			cellStyle: (p) => ({ color: p.value > 0 ? '#dc2626' : '#6b7280', fontWeight: '600' }),
 		},
-		{
-			headerName: 'Budget Used', field: 'budget_used_pct', sortable: true, width: 150,
-			cellRenderer: (p) => (
-				<div className="flex items-center gap-2 h-full">
-					<div className="flex-1 bg-gray-200 rounded-full h-2">
-						<div
-							className={`h-2 rounded-full ${p.value >= 90 ? 'bg-red-500' : p.value >= 70 ? 'bg-amber-500' : 'bg-emerald-500'}`}
-							style={{ width: `${Math.min(p.value || 0, 100)}%` }}
-						/>
-					</div>
-					<span className="text-xs font-semibold text-gray-700 w-9 text-right">{p.value || 0}%</span>
-				</div>
-			),
-		},
+		// {
+		// 	headerName: 'Budget Used', field: 'budget_used_pct', sortable: true, width: 150,
+		// 	cellRenderer: (p) => (
+		// 		<div className="flex items-center gap-2 h-full">
+		// 			<div className="flex-1 bg-gray-200 rounded-full h-2">
+		// 				<div
+		// 					className={`h-2 rounded-full ${p.value >= 90 ? 'bg-red-500' : p.value >= 70 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+		// 					style={{ width: `${Math.min(p.value || 0, 100)}%` }}
+		// 				/>
+		// 			</div>
+		// 			<span className="text-xs font-semibold text-gray-700 w-9 text-right">{p.value || 0}%</span>
+		// 		</div>
+		// 	),
+		// },
+		// {
+		// 	headerName: 'Status', field: 'status', sortable: true, width: 120,
+		// 	cellRenderer: (p) => {
+		// 		const map = {
+		// 			planning:  'bg-amber-100 text-amber-800',
+		// 			active:    'bg-emerald-100 text-emerald-800',
+		// 			completed: 'bg-blue-100 text-blue-800',
+		// 		};
+		// 		return (
+		// 			<span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${map[p.value] || 'bg-gray-100 text-gray-800'}`}>
+		// 				{p.value?.charAt(0).toUpperCase() + p.value?.slice(1)}
+		// 			</span>
+		// 		);
+		// 	},
+		// },
 		{
 			headerName: 'Actions', width: 200, sortable: false, pinned: 'right',           
 			cellRenderer: (p) => (
@@ -891,7 +891,7 @@ function Dashboard() {
 					)}
 				</div>
 
-				{/* ── Site Summary Table ── */}
+				{/* ── Site Summary Table ── */}				
 				<div className="mt-8">
 					<div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
 						<div>
@@ -910,19 +910,25 @@ function Dashboard() {
 									: 'Budget, expenses and payment actions across all active & completed sites'}
 							</p>
 						</div>
-						<div className="flex gap-2 items-center">
-							{/* Only show name search when showing all sites */}
-							{!selectedSite && (
-								<div className="min-w-[220px]">
-									<ThemeUI.Input
-										value={siteSummarySearch}
-										onChange={(e) => setSiteSummarySearch(e.target.value)}
-										placeholder="Search sites…"
-										leftElement={<Search size={16} className="text-gray-400" />}
-										className="bg-white"
-									/>
-								</div>
-							)}
+						<div className="flex gap-2">
+							<ThemeUI.Button
+								type="button"
+								onClick={() => navigate('/materialentry', { state: { openModal: true, siteId: selectedSite } })}
+								gradientColors={{ start: theme.primaryGradientStart, end: theme.primaryGradientEnd }}
+								direction={theme.gradientDirection}
+								className="px-3 py-1.5 text-xs transition-all duration-200 hover:scale-105 flex items-center gap-1.5"
+							>
+								<Package className="h-3.5 w-3.5 me-2" /> Material Entry
+							</ThemeUI.Button>
+							<ThemeUI.Button
+								type="button"
+								onClick={() => navigate('/labourentry', { state: { openModal: true, siteId: selectedSite } })}
+								gradientColors={{ start: theme.primaryGradientStart, end: theme.primaryGradientEnd }}
+								direction={theme.gradientDirection}
+								className="px-3 py-1.5 text-xs transition-all duration-200 hover:scale-105 flex items-center gap-1.5"
+							>
+								<Users className="h-3.5 w-3.5 me-2" /> Labour Entry
+							</ThemeUI.Button>
 							<ThemeUI.Button
 								onClick={exportSiteSummaryToCSV}
 								gradientColors={{ start: theme.primaryGradientStart, end: theme.primaryGradientEnd }}
@@ -956,26 +962,6 @@ function Dashboard() {
 							<div>
 								<h2 className="text-xl font-bold">Recent Transactions</h2>
 								<p className="text-sm text-gray-600 mt-1">Material and labour entries for the selected period</p>
-							</div>
-							<div className="flex gap-2">
-								<ThemeUI.Button
-									type="button"
-									onClick={() => navigate('/materialentry', { state: { openModal: true, siteId: selectedSite } })}
-									gradientColors={{ start: theme.primaryGradientStart, end: theme.primaryGradientEnd }}
-									direction={theme.gradientDirection}
-									className="px-3 py-1.5 text-xs transition-all duration-200 hover:scale-105 flex items-center gap-1.5"
-								>
-									<Package className="h-3.5 w-3.5 me-2" /> Material Entry
-								</ThemeUI.Button>
-								<ThemeUI.Button
-									type="button"
-									onClick={() => navigate('/labourentry', { state: { openModal: true, siteId: selectedSite } })}
-									gradientColors={{ start: theme.primaryGradientStart, end: theme.primaryGradientEnd }}
-									direction={theme.gradientDirection}
-									className="px-3 py-1.5 text-xs transition-all duration-200 hover:scale-105 flex items-center gap-1.5"
-								>
-									<Users className="h-3.5 w-3.5 me-2" /> Labour Entry
-								</ThemeUI.Button>
 							</div>
 						</div>
 						<div className="mb-4">

@@ -1,4 +1,4 @@
-const { LabourEntry, Labour, Site, User } = require('../models');
+const { LabourEntry, Labour, Vendor, Site, User } = require('../models');
 const { Op } = require('sequelize');
 const labourEntryController = {
     
@@ -14,6 +14,7 @@ const labourEntryController = {
                 site_id    = '',
                 date_from  = '',
                 date_to    = '',
+                vendor_id  = '',
                 sort       = 'date',
                 order      = 'desc',
             } = req.query;
@@ -38,6 +39,9 @@ const labourEntryController = {
             }
             if(labour_id){
                 whereClause.labour_id = labour_id;
+            }
+            if(vendor_id){
+                whereClause.vendor_id = vendor_id;
             }
             if(site_id){
                 whereClause.site_id = site_id;
@@ -70,6 +74,13 @@ const labourEntryController = {
                         name: { [Op.like]: `%${search}%` }
                     } : undefined,
                     required: false
+                },
+                {
+                    model: Vendor,
+                    as: 'vendor',
+                    attributes: ['id', 'name'],
+                    where: vendor_id ? { id: vendor_id } : undefined,
+                    required: vendor_id ? true : false
                 },
                 {
                     model: User,
@@ -123,6 +134,11 @@ const labourEntryController = {
                         attributes: ['id', 'name', 'standard_rate']
                     },
                     {
+                        model: Vendor,
+                        as: 'vendor',
+                        attributes: ['id', 'name']
+                    },
+                    {
                         model: User,
                         as: 'creator',
                         attributes: ['id', 'name', 'email']
@@ -157,7 +173,7 @@ const labourEntryController = {
     createLabourEntry: async (req, res) => {
         const transaction = await LabourEntry.sequelize.transaction();
         try{
-            const { site_id, labour_id, date, no_of_workers, rate_per_worker, debit_entry, credit_entry, status } = req.body;
+            const { site_id, labour_id, vendor_id, date, no_of_workers, rate_per_worker, debit_entry, credit_entry, status } = req.body;
             const userId = req.user?.id;
             const errors = {};
             // Site ID validation
@@ -182,6 +198,18 @@ const labourEntryController = {
                 }else
                 if(labour.status === 0){
                     errors.labour_id = 'Selected labour is inactive';
+                }
+            }
+            // Vendor ID validation
+            if(!vendor_id){
+                errors.vendor_id = 'Vendor is required';
+            }else{
+                const vendor = await Vendor.findByPk(vendor_id, { transaction });
+                if(!vendor){
+                    errors.vendor_id = 'Selected vendor does not exist';
+                }else
+                if(vendor.status === 0){
+                    errors.vendor_id = 'Selected vendor is inactive';
                 }
             }
             // Date validation
@@ -257,6 +285,7 @@ const labourEntryController = {
             const labourEntryData = {
                 site_id           : site_id,
                 labour_id         : labour_id,
+                vendor_id         : vendor_id,
                 date              : new Date(date),
                 no_of_workers     : Number(no_of_workers),
                 rate_per_worker   : Number(rate_per_worker).toFixed(2),
@@ -289,7 +318,7 @@ const labourEntryController = {
         const transaction = await LabourEntry.sequelize.transaction();
         try{
             const { id } = req.params;
-            const { site_id, labour_id, date, no_of_workers, rate_per_worker, debit_entry, credit_entry, status } = req.body;
+            const { site_id, labour_id, vendor_id, date, no_of_workers, rate_per_worker, debit_entry, credit_entry, status } = req.body;
             const userId = req.user?.id;
             // Check if labour entry exists
             const labourEntry = await LabourEntry.findByPk(id, { transaction });
@@ -326,6 +355,20 @@ const labourEntryController = {
                     }else 
                     if(labour.status === 0){
                         errors.labour_id = 'Selected labour is inactive';
+                    }
+                }
+            }
+            // Vendor ID validation
+            if(vendor_id !== undefined){
+                if(!vendor_id){
+                    errors.vendor_id = 'Vendor cannot be empty';
+                }else{
+                    const vendor = await Vendor.findByPk(vendor_id, { transaction });
+                    if(!vendor){
+                        errors.vendor_id = 'Selected vendor does not exist';
+                    }else 
+                    if(vendor.status === 0){
+                        errors.vendor_id = 'Selected vendor is inactive';
                     }
                 }
             }
@@ -417,6 +460,7 @@ const labourEntryController = {
             };
             if(site_id !== undefined) updateData.site_id                 = site_id;
             if(labour_id !== undefined) updateData.labour_id             = labour_id;
+            if(vendor_id !== undefined) updateData.vendor_id             = vendor_id;
             if(date !== undefined) updateData.date                       = new Date(date);
             if(no_of_workers !== undefined) updateData.no_of_workers     = Number(no_of_workers);
             if(rate_per_worker !== undefined) updateData.rate_per_worker = Number(rate_per_worker).toFixed(2);

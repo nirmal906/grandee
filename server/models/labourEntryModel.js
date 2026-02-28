@@ -20,6 +20,12 @@ const LabourEntry   = sequelize.define(
             references: { model: 'labours', key: 'id' },
             comment: 'Labour type reference'
         },
+        vendor_id: {
+            type: DataTypes.BIGINT,
+            allowNull: true,
+            references: { model: 'vendors', key: 'id' },
+            comment: 'Vendor reference (optional, if labour is hired through a vendor)'
+        },  
         date: {
             type: DataTypes.DATEONLY,
             allowNull: false,

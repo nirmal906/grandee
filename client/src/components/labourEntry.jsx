@@ -11,7 +11,6 @@ import { ChevronRight, Loader, Edit, Search, Filter, Plus, Trash2 } from "lucide
 import Modal from "./modal";
 import Offcanvas from "./offcanvas";
 import NoRowsOverlay from "./noRowsOverlay";
-
 function LabourEntry() {
     const { theme } = useTheme();
     const location = useLocation()
@@ -21,6 +20,8 @@ function LabourEntry() {
     const [perPage, setPerPage] = useState(10);
     const [currentPage, setCurrentPage] = useState(1);
     const [labourEntries, setLabourEntries] = useState([]);
+    const [vendors, setVendors] = useState([])
+    const [vendorFilter, setVendorFilter] = useState("")
     const [editingEntry, setEditingEntry] = useState(null);
     const [searchQuery, setSearchQuery] = useState("");
     const [statusFilter, setStatusFilter] = useState("");
@@ -37,7 +38,7 @@ function LabourEntry() {
     const [currentCharIndex, setCurrentCharIndex] = useState(0);
     const [isDeleting, setIsDeleting] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
-    const words = ["site name", "labour name", "date"];
+    const words = ["site name", "labour name", "vendor name", "date"];
     
     // Ref to prevent circular updates
     const isUpdatingRef = useRef(false);
@@ -45,6 +46,7 @@ function LabourEntry() {
     const [formData, setFormData] = useState({
         site_id: "",
         labour_id: "",
+        vendor_id: "",
         date: "",
         no_of_workers: "",
         rate_per_worker: "",
@@ -98,6 +100,7 @@ function LabourEntry() {
             setFormData({
                 site_id: location.state.siteId,
                 labour_id: "",
+                vendor_id: "",
                 date: "",
                 no_of_workers: "",
                 rate_per_worker: "",
@@ -121,6 +124,19 @@ function LabourEntry() {
             console.error("Failed to fetch active labours:", err);
         }
     }, []);
+
+    // Fetch active vendors
+    const fetchActiveVendors = async () => {
+        try {
+            const response = await axios.get(`/api/material-entry/active-vendors`)
+            if (response.data.success) {
+                setVendors(response.data.data)
+            }
+        } catch (err) {
+            console.error("Error fetching vendors:", err)
+            toast.error("Failed to load vendors")
+        }
+    }
 
     const fetchActiveSites = useCallback(async () => {
         try {
@@ -146,6 +162,7 @@ function LabourEntry() {
                     site_id: siteFilter,
                     date_from: dateFrom,
                     date_to: dateTo,
+                    vendor_id: vendorFilter || "",
                 },
             });
             if (response.data.success) {
@@ -159,7 +176,7 @@ function LabourEntry() {
         } finally {
             setIsLoading(false);
         }
-    }, [currentPage, perPage, searchQuery, statusFilter, labourFilter, siteFilter, dateFrom, dateTo]);
+    }, [currentPage, perPage, searchQuery, statusFilter, labourFilter, siteFilter, dateFrom, dateTo, vendorFilter]);
 
     useEffect(() => {
         fetchLabourEntries();
@@ -168,6 +185,7 @@ function LabourEntry() {
     useEffect(() => {
         fetchActiveLabours();
         fetchActiveSites();
+        fetchActiveVendors()
     }, []);
 
     // Fixed placeholder typing animation
@@ -263,6 +281,7 @@ function LabourEntry() {
         setFormData({
             site_id: "",
             labour_id: "",
+            vendor_id: "",
             date: "",
             no_of_workers: "",
             rate_per_worker: "",
@@ -283,6 +302,7 @@ function LabourEntry() {
         setFormData({
             site_id: entry.site_id || "",
             labour_id: entry.labour_id || "",
+            vendor_id: entry.vendor_id || "",
             date: entry.date ? entry.date.split("T")[0] : "",
             no_of_workers: entry.no_of_workers || "",
             rate_per_worker: entry.rate_per_worker || "",
@@ -339,6 +359,7 @@ function LabourEntry() {
         setFormData({
             site_id: "",
             labour_id: "",
+            vendor_id: "",
             date: "",
             no_of_workers: "",
             rate_per_worker: "",
@@ -349,6 +370,11 @@ function LabourEntry() {
         setBackendErrors({});
         setIsModalOpen(false);
     };
+
+    const handleVendorChange = (selectedOption) => {
+        setFormData(prev => ({ ...prev, vendor_id: selectedOption?.value || "" }))
+        setBackendErrors(prev => ({ ...prev, vendor_id: "" }))
+    }
 
     const handleInputChange = (e) => {
         const { name, value } = e.target;
@@ -446,6 +472,13 @@ function LabourEntry() {
                 width: 120, 
                 valueFormatter: (p) => (p.value ? new Date(p.value).toLocaleDateString() : "—") 
             },
+            {
+                headerName: "Vendor",
+                field: "vendor.name",
+                valueGetter: (params) => params.data.vendor?.name || "-",
+                minWidth: 120,
+                flex: 1,
+            },
             { headerName: "Labour", field: "labour.name", flex: 1, minWidth: 150 },
             { headerName: "Workers", field: "no_of_workers", width: 100, valueFormatter: (p) => p.value ?? "—" },
             { 
@@ -536,6 +569,17 @@ function LabourEntry() {
                         }}
                         options={activeSites.map((s) => ({ value: s.id, label: s.name }))}
                         placeholder="Select site"
+                        isClearable
+                    />
+                </ThemeUI.FormField>
+
+                <ThemeUI.FormField label="Vendor" name="vendor_id" error={backendErrors.vendor_id}>
+                    <ThemeUI.Select
+                        value={formData.vendor_id}
+                        onChange={handleVendorChange}
+                        options={vendors.map(vendor => ({ value: vendor.id, label: vendor.name }))}
+                        placeholder="Select vendor"
+                        error={backendErrors.vendor_id}
                         isClearable
                     />
                 </ThemeUI.FormField>
@@ -873,7 +917,21 @@ function LabourEntry() {
                             isClearable
                         />
                     </ThemeUI.FormField>
-
+                    <ThemeUI.FormField label="Vendor Filter">
+                        <ThemeUI.Select
+                            value={vendorFilter}
+                            onChange={(selected) => {
+                                setVendorFilter(selected?.value || "")
+                                setCurrentPage(1)
+                            }}
+                            options={vendors.map(vendor => ({
+                                value: vendor.id,
+                                label: vendor.name
+                            }))}
+                            placeholder="All vendors"
+                            isClearable
+                        />
+                    </ThemeUI.FormField>
                     <ThemeUI.FormField label="Labour">
                         <ThemeUI.Select
                             value={labourFilter}
@@ -933,6 +991,7 @@ function LabourEntry() {
                             onClick={() => {
                                 setSiteFilter("");
                                 setLabourFilter("");
+                                setVendorFilter("")
                                 setDateFrom("");
                                 setDateTo("");
                                 setStatusFilter("");
