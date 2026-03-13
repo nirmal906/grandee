@@ -108,11 +108,8 @@ function Site() {
 				fetchPayments(targetSite.id);
 				setSelectedSite(targetSite);
 
-				// Open Add Payment form directly — no history modal
-				setEditingPayment(null);
-				setPaymentFormData(INITIAL_PAYMENT_STATE);
-				setPaymentBackendErrors({});
-				setIsPaymentFormModalOpen(true);
+				// Open Payment History modal
+				setIsPaymentModalOpen(true);
 
 				// Clear state so refresh doesn't reopen
 				window.history.replaceState({}, document.title);

@@ -11,6 +11,7 @@ const MODULES = [
     { name: 'materialentry', label: 'Material Transactions' },
     { name: 'labour', label: 'Labour Master' },
     { name: 'labourentry', label: 'Labour Transactions' },
+    { name: 'approvelabourentry', label: 'Approve Labour Transactions' },
     { name: 'vendor', label: 'Vendor' },
 ];
 const permissionController = {

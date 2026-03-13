@@ -1,6 +1,7 @@
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/db');
-const LabourEntry   = sequelize.define(
+
+const LabourEntry = sequelize.define(
     'LabourEntry',
     {
         id: {
@@ -24,8 +25,8 @@ const LabourEntry   = sequelize.define(
             type: DataTypes.BIGINT,
             allowNull: true,
             references: { model: 'vendors', key: 'id' },
-            comment: 'Vendor reference (optional, if labour is hired through a vendor)'
-        },  
+            comment: 'Vendor reference (optional)'
+        },
         date: {
             type: DataTypes.DATEONLY,
             allowNull: false,
@@ -38,27 +39,39 @@ const LabourEntry   = sequelize.define(
         },
         rate_per_worker: {
             type: DataTypes.DECIMAL(10, 2),
-            allowNull: false,
-            defaultValue: 0.00,
-            comment: 'Rate per worker (usually from labour.standard_rate)'
+            allowNull: true,
+            defaultValue: null,
+            comment: 'Rate per worker - null until admin approves for non-admin entries'
         },
         debit_entry: {
             type: DataTypes.DECIMAL(10, 2),
-            allowNull: false,
-            defaultValue: 0.00,
-            comment: 'Debit amount (unpaid/pending amount)'
+            allowNull: true,
+            defaultValue: null,
+            comment: 'Debit amount (unpaid/pending) - null until admin approves'
         },
         credit_entry: {
             type: DataTypes.DECIMAL(10, 2),
-            allowNull: false,
-            defaultValue: 0.00,
-            comment: 'Credit amount (paid amount)'
+            allowNull: true,
+            defaultValue: null,
+            comment: 'Credit amount (paid) - null until admin approves'
         },
         status: {
             type: DataTypes.TINYINT,
             allowNull: false,
             defaultValue: 1,
             comment: '0=inactive, 1=active'
+        },
+        approval_status: {
+            type: DataTypes.ENUM('pending', 'approved', 'rejected'),
+            allowNull: false,
+            defaultValue: 'pending',
+            comment: 'pending=waiting admin approval, approved=approved, rejected=rejected by admin'
+        },
+        rejection_reason: {
+            type: DataTypes.STRING(500),
+            allowNull: true,
+            defaultValue: null,
+            comment: 'Optional reason provided by admin when rejecting'
         },
         created_by: {
             type: DataTypes.BIGINT,
@@ -74,7 +87,7 @@ const LabourEntry   = sequelize.define(
             type: DataTypes.VIRTUAL(DataTypes.DECIMAL(12, 2), ['no_of_workers', 'rate_per_worker']),
             get() {
                 const workers = parseFloat(this.no_of_workers) || 0;
-                const rate = parseFloat(this.rate_per_worker) || 0;
+                const rate    = parseFloat(this.rate_per_worker) || 0;
                 return parseFloat((workers * rate).toFixed(2));
             }
         }
@@ -85,12 +98,14 @@ const LabourEntry   = sequelize.define(
         createdAt: 'created_at',
         updatedAt: 'updated_at',
         indexes: [
-            { name: 'idx_labour_id', fields: ['labour_id'] },
-            { name: 'idx_site_id', fields: ['site_id'] },
-            { name: 'idx_date', fields: ['date'] },
-            { name: 'idx_status', fields: ['status'] },
+            { name: 'idx_labour_id',        fields: ['labour_id'] },
+            { name: 'idx_site_id',          fields: ['site_id'] },
+            { name: 'idx_date',             fields: ['date'] },
+            { name: 'idx_status',           fields: ['status'] },
+            { name: 'idx_approval_status',  fields: ['approval_status'] },
             { name: 'idx_site_labour_date', fields: ['site_id', 'labour_id', 'date'] }
         ]
     }
 );
+
 module.exports = LabourEntry;

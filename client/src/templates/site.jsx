@@ -1,8 +1,9 @@
-import React, { useState, useMemo } from "react"
-import { ArrowLeft, DollarSign, CheckCircle } from "lucide-react"
+import React, { useState, useMemo, useEffect } from "react"
+import { ArrowLeft, DollarSign, CheckCircle, BarChart2, Loader } from "lucide-react"
 import Modal from "../components/modal"
 import { useTheme } from "../context/themeContext"
 import { ThemeUI } from "../context/themeUI"
+import axios from "../utils/axios"
 
 const WhatsAppIcon = ({ size = 16, color = "white" }) => (
 	<svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
@@ -18,10 +19,24 @@ export default function CustomerWhatsAppModal({ site, onClose }) {
 	const [activeTemplate, setActiveTemplate] = useState(null)
 	const [enteredAmount, setEnteredAmount]   = useState("")
 	const [customNote, setCustomNote]         = useState("")
+	const [paymentSummary, setPaymentSummary] = useState(null)
+	const [summaryLoading, setSummaryLoading] = useState(false)
 
 	const totalBudget = parseFloat(site?.total_budget || 0)
 	const clientName  = site?.client_name || "Sir/Madam"
 	const siteName    = site?.name || "your site"
+
+	// Fetch payment summary when modal opens
+	useEffect(() => {
+		if (!site?.id) return
+		setSummaryLoading(true)
+		axios.get(`/api/site-payment/${site.id}/summary`)
+			.then(res => {
+				if (res.data.success) setPaymentSummary(res.data.data)
+			})
+			.catch(err => console.error("Failed to fetch payment summary:", err))
+			.finally(() => setSummaryLoading(false))
+	}, [site?.id])
 
 	const TEMPLATES = [
 		{
@@ -36,15 +51,22 @@ export default function CustomerWhatsAppModal({ site, onClose }) {
 			label: "Received Payment",
 			desc:  "Confirm to the client that their payment has been received",
 		},
+		{
+			id:    "summary",
+			icon:  <BarChart2 size={20} />,
+			label: "Payment Statement",
+			desc:  "Send a full payment summary with balance and progress to the client",
+		},
 	]
 
 	const enteredAmountNum = parseFloat(enteredAmount) || 0
 	const remaining        = totalBudget - enteredAmountNum
 
+	const fmt = (val) => `₹${Number(val).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`
+
+	// Build preview message
 	const previewMessage = useMemo(() => {
 		if (!activeTemplate) return ""
-
-		const fmt = (val) => `₹${Number(val).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`
 
 		if (activeTemplate === "request") {
 			return `Hi ${clientName},
@@ -52,7 +74,7 @@ export default function CustomerWhatsAppModal({ site, onClose }) {
 This is a payment request for *${siteName}*.
 
 *Total Budget:* ${fmt(totalBudget)}
-*Requested Payment:* ${fmt(enteredAmountNum || "__")}
+*Requested Payment:* ${fmt(enteredAmountNum || 0)}
 *Remaining Balance:* ${fmt(remaining)}
 
 Kindly process the requested payment at your convenience.
@@ -68,7 +90,7 @@ ${COMPANY_NAME}`
 We have received your payment for *${siteName}*.
 
 *Total Budget:* ${fmt(totalBudget)}
-*Received Payment:* ${fmt(enteredAmountNum || "__")}
+*Received Payment:* ${fmt(enteredAmountNum || 0)}
 *Remaining Balance:* ${fmt(remaining)}
 
 Thank you for your prompt payment.
@@ -77,11 +99,40 @@ Regards,
 ${COMPANY_NAME}`
 		}
 
+		if (activeTemplate === "summary") {
+			if (!paymentSummary) return "Loading payment details..."
+			const totalPaid  = parseFloat(paymentSummary.total_paid || 0)
+			const balance    = parseFloat(paymentSummary.balance || 0)
+			const percent    = paymentSummary.payment_percentage || 0
+			const progressBar = buildProgressBar(percent)
+
+			return `Hi ${clientName},
+
+Here is your payment statement for *${siteName}*.
+
+*Total Budget:*  ${fmt(totalBudget)}
+*Total Paid:*    ${fmt(totalPaid)}
+*Balance Due:*   ${fmt(balance)}
+
+*Payment Progress:* ${progressBar} ${percent}%
+
+${balance <= 0
+	? "✅ All payments have been received. Thank you!"
+	: "Please clear the remaining balance at your earliest convenience."}
+
+Regards,
+${COMPANY_NAME}`
+		}
+
 		return ""
-	}, [activeTemplate, enteredAmountNum, remaining, totalBudget, clientName, siteName])
+	}, [activeTemplate, enteredAmountNum, remaining, totalBudget, clientName, siteName, paymentSummary])
 
 	const finalMessage = previewMessage + (customNote.trim() ? `\n\n${customNote.trim()}` : "")
-	const canSend      = enteredAmount !== "" && enteredAmountNum > 0
+
+	// For manual-amount templates, need a valid amount
+	const canSend = activeTemplate === "summary"
+		? !!paymentSummary
+		: enteredAmount !== "" && enteredAmountNum > 0
 
 	const handleSend = () => {
 		const phone   = site?.client_mobile?.replace(/\D/g, "")
@@ -171,6 +222,10 @@ ${COMPANY_NAME}`
 								<div style={{ fontWeight: 700, fontSize: 14, color: "#111827" }}>{t.label}</div>
 								<div style={{ fontSize: 12, color: "#9ca3af", marginTop: 2 }}>{t.desc}</div>
 							</div>
+							{/* Loading badge on summary card while fetching */}
+							{t.id === "summary" && summaryLoading && (
+								<Loader size={14} style={{ color: "#9ca3af", animation: "spin 1s linear infinite" }} />
+							)}
 							<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" strokeWidth="2.5">
 								<path d="M9 18l6-6-6-6" />
 							</svg>
@@ -195,59 +250,112 @@ ${COMPANY_NAME}`
 						<ArrowLeft size={13} /> Back to templates
 					</button>
 
-					{/* Budget summary strip */}
-					<div style={{
-						background: `linear-gradient(135deg, ${theme.primaryGradientStart}0d, ${theme.primaryGradientEnd}0d)`,
-						border: `1.5px solid ${theme.primaryGradientStart}33`,
-						borderRadius: 12, padding: "12px 16px",
-						display: "flex", gap: 24, flexWrap: "wrap"
-					}}>
-						<div>
-							<div style={{ fontSize: 11, color: "#6b7280", marginBottom: 2 }}>Total Budget</div>
-							<div style={{ fontSize: 15, fontWeight: 700, color: "#111827" }}>
-								₹{totalBudget.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+					{/* ── Summary template: auto-filled stats ── */}
+					{activeTemplate === "summary" ? (
+						summaryLoading ? (
+							<div style={{ textAlign: "center", padding: "32px 0", color: "#9ca3af", fontSize: 13 }}>
+								<Loader size={20} style={{ animation: "spin 1s linear infinite", marginBottom: 8 }} />
+								<div>Loading payment data...</div>
 							</div>
-						</div>
-						<div>
-							<div style={{ fontSize: 11, color: "#6b7280", marginBottom: 2 }}>
-								{activeTemplate === "request" ? "Requested" : "Received"}
-							</div>
-							<div style={{ fontSize: 15, fontWeight: 700, color: theme.primaryGradientStart }}>
-								₹{enteredAmountNum.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-							</div>
-						</div>
-						<div>
-							<div style={{ fontSize: 11, color: "#6b7280", marginBottom: 2 }}>Remaining Balance</div>
-							<div style={{
-								fontSize: 15, fontWeight: 700,
-								color: remaining < 0 ? "#ef4444" : remaining === 0 ? "#10b981" : "#f59e0b"
-							}}>
-								₹{remaining.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-							</div>
-						</div>
-					</div>
+						) : paymentSummary ? (
+							<>
+								{/* Stats strip */}
+								<div style={{
+									display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10
+								}}>
+									{[
+										{ label: "Total Budget",  value: fmt(paymentSummary.total_budget),  color: "#2563eb", bg: "#eff6ff" },
+										{ label: "Total Paid",    value: fmt(paymentSummary.total_paid),    color: "#16a34a", bg: "#f0fdf4" },
+										{ label: "Balance Due",   value: fmt(paymentSummary.balance),       color: "#d97706", bg: "#fffbeb" },
+										{ label: "Progress",      value: `${paymentSummary.payment_percentage}%`, color: "#7c3aed", bg: "#f5f3ff" },
+									].map(stat => (
+										<div key={stat.label} style={{
+											background: stat.bg, borderRadius: 10,
+											padding: "12px 14px", textAlign: "center"
+										}}>
+											<div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>{stat.label}</div>
+											<div style={{ fontSize: 16, fontWeight: 700, color: stat.color }}>{stat.value}</div>
+										</div>
+									))}
+								</div>
 
-					{/* Amount input */}
-					<ThemeUI.FormField
-						label={activeTemplate === "request" ? "Requested Amount (₹)" : "Received Amount (₹)"}
-						name="entered_amount"
-						required
-					>
-						<ThemeUI.Input
-							type="number"
-							min="0"
-							step="0.01"
-							name="entered_amount"
-							value={enteredAmount}
-							onChange={e => setEnteredAmount(e.target.value)}
-							placeholder="0.00"
-						/>
-						{remaining < 0 && enteredAmount !== "" && (
-							<div style={{ fontSize: 11, color: "#ef4444", marginTop: 4 }}>
-								⚠ Amount exceeds total budget
+								{/* Progress bar */}
+								<div>
+									<div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#9ca3af", marginBottom: 4 }}>
+										<span>Payment Progress</span>
+										<span>{paymentSummary.payment_percentage}%</span>
+									</div>
+									<div style={{ width: "100%", background: "#e5e7eb", borderRadius: 99, height: 8 }}>
+										<div style={{
+											width: `${Math.min(paymentSummary.payment_percentage, 100)}%`,
+											background: `linear-gradient(90deg, ${theme.primaryGradientStart}, ${theme.primaryGradientEnd})`,
+											height: 8, borderRadius: 99, transition: "width 0.4s ease"
+										}} />
+									</div>
+								</div>
+							</>
+						) : (
+							<div style={{ textAlign: "center", padding: "24px 0", color: "#ef4444", fontSize: 13 }}>
+								Could not load payment data. Please try again.
 							</div>
-						)}
-					</ThemeUI.FormField>
+						)
+					) : (
+						/* ── Request / Received: manual amount budget strip ── */
+						<>
+							<div style={{
+								background: `linear-gradient(135deg, ${theme.primaryGradientStart}0d, ${theme.primaryGradientEnd}0d)`,
+								border: `1.5px solid ${theme.primaryGradientStart}33`,
+								borderRadius: 12, padding: "12px 16px",
+								display: "flex", gap: 24, flexWrap: "wrap"
+							}}>
+								<div>
+									<div style={{ fontSize: 11, color: "#6b7280", marginBottom: 2 }}>Total Budget</div>
+									<div style={{ fontSize: 15, fontWeight: 700, color: "#111827" }}>
+										{fmt(totalBudget)}
+									</div>
+								</div>
+								<div>
+									<div style={{ fontSize: 11, color: "#6b7280", marginBottom: 2 }}>
+										{activeTemplate === "request" ? "Requested" : "Received"}
+									</div>
+									<div style={{ fontSize: 15, fontWeight: 700, color: theme.primaryGradientStart }}>
+										{fmt(enteredAmountNum)}
+									</div>
+								</div>
+								<div>
+									<div style={{ fontSize: 11, color: "#6b7280", marginBottom: 2 }}>Remaining Balance</div>
+									<div style={{
+										fontSize: 15, fontWeight: 700,
+										color: remaining < 0 ? "#ef4444" : remaining === 0 ? "#10b981" : "#f59e0b"
+									}}>
+										{fmt(remaining)}
+									</div>
+								</div>
+							</div>
+
+							{/* Amount input */}
+							<ThemeUI.FormField
+								label={activeTemplate === "request" ? "Requested Amount (₹)" : "Received Amount (₹)"}
+								name="entered_amount"
+								required
+							>
+								<ThemeUI.Input
+									type="number"
+									min="0"
+									step="0.01"
+									name="entered_amount"
+									value={enteredAmount}
+									onChange={e => setEnteredAmount(e.target.value)}
+									placeholder="0.00"
+								/>
+								{remaining < 0 && enteredAmount !== "" && (
+									<div style={{ fontSize: 11, color: "#ef4444", marginTop: 4 }}>
+										⚠ Amount exceeds total budget
+									</div>
+								)}
+							</ThemeUI.FormField>
+						</>
+					)}
 
 					{/* Message preview */}
 					<div>
@@ -259,9 +367,9 @@ ${COMPANY_NAME}`
 							borderRadius: 12, padding: "14px 16px",
 							fontSize: 13, color: "#166534", lineHeight: 1.75,
 							whiteSpace: "pre-wrap", minHeight: 100,
-							maxHeight: 220, overflowY: "auto", fontFamily: "inherit"
+							maxHeight: 260, overflowY: "auto", fontFamily: "inherit"
 						}}>
-							{finalMessage}
+							{previewMessage || <span style={{ color: "#9ca3af" }}>Preview will appear here...</span>}
 						</div>
 					</div>
 
@@ -309,4 +417,11 @@ ${COMPANY_NAME}`
 			)}
 		</Modal>
 	)
+}
+
+// Builds a simple text progress bar for WhatsApp (no emojis, just blocks)
+function buildProgressBar(percent) {
+	const filled = Math.round((percent / 100) * 10)
+	const empty  = 10 - filled
+	return "▓".repeat(filled) + "░".repeat(empty)
 }

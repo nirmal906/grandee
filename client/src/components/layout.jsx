@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { LayoutDashboard, ChevronDown, ChevronRight, Target, Menu, Settings, MapPin, Users, Package, Truck, UserCog, KeyRound, UsersRound, Ruler  } from "lucide-react"
+import { LayoutDashboard, ChevronDown, ChevronRight, Target, Menu, ClipboardCheck, Settings, MapPin, Users, Package, Truck, UserCog, KeyRound, UsersRound, Ruler  } from "lucide-react"
 import { Link, useLocation, useNavigate } from 'react-router-dom'; 
 import { useTheme } from '../context/themeContext';
 import { ThemeUI } from '../context/themeUI';
@@ -168,7 +168,8 @@ function Layout({ children, selectedSite, siteName }){
 				type: 'group',
 				children: [
 					{ name: 'labour', icon: Users, label: 'Master', type: 'single' },
-					{ name: 'labourentry', icon: Users, label: 'Transactions', type: 'single' }
+					{ name: 'labourentry', icon: Users, label: 'Transactions', type: 'single' },
+					{ name: 'approvelabourentry',   icon: ClipboardCheck, label: 'Approve Transaction' },
 				]
 			},
 			{

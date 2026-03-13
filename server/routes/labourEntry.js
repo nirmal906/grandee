@@ -1,24 +1,23 @@
 const express = require('express');
 const router  = express.Router();
-const labourEntryController  = require('../controllers/labourEntryController');
-const authMiddleware = require("../middleware/auth");
+const labourEntryController = require('../controllers/labourEntryController');
+const authMiddleware        = require('../middleware/auth');
 
-// Get active labours (must be before /:id)
+// ── Dropdown data ──
 router.get('/active-labours', authMiddleware, labourEntryController.getActiveLabours);
 
-// Fetch all labour entries with pagination
-router.get('/', authMiddleware, labourEntryController.getLabourEntries);
+// ── Admin approval queue ──
+router.get('/pending-approvals', authMiddleware, labourEntryController.getPendingApprovals);
 
-// Get labour entry by ID
+// ── Approve / Reject actions ──
+router.post('/:id/approve', authMiddleware, labourEntryController.approveLabourEntry);
+router.post('/:id/reject',  authMiddleware, labourEntryController.rejectLabourEntry);
+
+// ── CRUD ──
+router.get('/',    authMiddleware, labourEntryController.getLabourEntries);
 router.get('/:id', authMiddleware, labourEntryController.getLabourEntryById);
-
-// Create a labour entry
-router.post('/', authMiddleware, labourEntryController.createLabourEntry);
-
-// Update a labour entry
+router.post('/',   authMiddleware, labourEntryController.createLabourEntry);
 router.put('/:id', authMiddleware, labourEntryController.updateLabourEntry);
-
-// Delete a labour entry
 router.delete('/:id', authMiddleware, labourEntryController.deleteLabourEntry);
 
 module.exports = router;

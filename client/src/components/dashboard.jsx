@@ -232,6 +232,11 @@ function Dashboard() {
 	const navigate  = useNavigate();
 	const { theme } = useTheme();
 
+	// ── Role-based visibility ──
+	const currentUser = JSON.parse(localStorage.getItem('GrandeeAdminUser') || '{}');
+	const userRole    = (currentUser?.role_name || '').toLowerCase();
+	const isAdmin     = ['admin', 'superadmin'].includes(userRole);
+
 	// ── Date state ──
 	const [fromDate, setFromDate] = useState('');
 	const [toDate,   setToDate]   = useState('');
@@ -271,10 +276,11 @@ function Dashboard() {
 	const [siteSummaryGridApi, setSiteSummaryGridApi] = useState(null);
 
 	// ── Counter config ──
+	// adminOnly: true  →  hidden from non-admin roles
 	const counterConfig = [
 		{ id: 'active-sites',     title: 'Active Sites',     dataKey: 'activeSites',    icon: Building2,   color: 'bg-blue-500',   route: '/site',          format: 'number'   },
-		{ id: 'total-budget',     title: 'Total Budget',     dataKey: 'totalBudget',    icon: Wallet,      color: 'bg-green-500',  route: '/site',          format: 'currency' },
-		{ id: 'client-paid',      title: 'Client Paid',      dataKey: 'clientPayments', icon: CreditCard,  color: 'bg-teal-500',   route: '/site',          format: 'currency', showOutstanding: true },
+		{ id: 'total-budget',     title: 'Total Budget',     dataKey: 'totalBudget',    icon: Wallet,      color: 'bg-green-500',  route: '/site',          format: 'currency', adminOnly: true },
+		{ id: 'client-paid',      title: 'Client Paid',      dataKey: 'clientPayments', icon: CreditCard,  color: 'bg-teal-500',   route: '/site',          format: 'currency', showOutstanding: true, adminOnly: true },
 		{ id: 'material-expense', title: 'Material Expense', dataKey: 'materialExpense',icon: IndianRupee, color: 'bg-orange-500', route: '/materialentry', format: 'currency' },
 		{ id: 'labour-expense',   title: 'Labour Expense',   dataKey: 'labourExpense',  icon: IndianRupee, color: 'bg-purple-500', route: '/labourentry',   format: 'currency' },
 		{ id: 'total-expense',    title: 'Total Expense',    dataKey: 'totalExpense',   icon: TrendingUp,  color: 'bg-red-500',    route: null,             format: 'currency' },
@@ -350,12 +356,10 @@ function Dashboard() {
 		} catch (err) { console.error('Labour pending fetch error:', err); }
 	}, []);
 
-	// ─── FIXED: fetchSiteSummary now passes site_id when a site is selected ──
 	const fetchSiteSummary = useCallback(async (site) => {
 		try {
 			const token  = localStorage.getItem('accessToken');
 			const params = {};
-			// Pass the site_id argument if provided, otherwise fall back to selectedSite
 			const activeSite = site !== undefined ? site : selectedSite;
 			if (activeSite) params.site_id = activeSite;
 			const res = await axios.get(`/api/dashboard/site-summary`, {
@@ -375,7 +379,7 @@ function Dashboard() {
 			fetchTransactions(f, t, s),
 			fetchMaterialPending(f, t, s),
 			fetchLabourPending(f, t, s),
-			fetchSiteSummary(s),        // ← pass site explicitly so it's not stale
+			fetchSiteSummary(s),
 		]);
 		setIsInitialLoad(false);
 	// eslint-disable-next-line react-hooks/exhaustive-deps
@@ -389,7 +393,6 @@ function Dashboard() {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
-	// Auto-populate fromDate from site start_date when site changes
 	useEffect(() => {
 		if (!selectedSite) {
 			autoSetSiteRef.current = null;
@@ -515,18 +518,18 @@ function Dashboard() {
 				: { fontWeight: 'bold', color: '#dc2626' },
 		},
 		{
-			headerName: 'Vendor', field: 'vendor_name', filter: 'agTextColumnFilter', sortable: true, width: 140,pinned:"right",
+			headerName: 'Vendor', field: 'vendor_name', filter: 'agTextColumnFilter', sortable: true, width: 140, pinned:"right",
 			valueFormatter: (p) => p.node.rowPinned ? p.value : (p.value || '-'),
 			cellStyle: (p) => p.node.rowPinned ? { fontWeight: 'bold', backgroundColor: '#f3f4f6', fontSize: '14px' } : null,
 		},
 	], []);
 
 	const materialPendingColumnDefs = useMemo(() => [
-		{ headerName: 'Date',     field: 'date',          filter: 'agDateColumnFilter',   sortable: true, width: 120,  pinned: 'left', valueFormatter: formatDateGrid, sort: 'desc', pinned:'left' },
+		{ headerName: 'Date',     field: 'date',          filter: 'agDateColumnFilter',   sortable: true, width: 120,  pinned: 'left', valueFormatter: formatDateGrid, sort: 'desc' },
 		{ headerName: 'Site',     field: 'site_name',     filter: 'agTextColumnFilter',   sortable: true, width: 150 },
 		{ headerName: 'Material', field: 'material_name', filter: 'agTextColumnFilter',   sortable: true, width: 150 },
 		{ headerName: 'Total',    field: 'total_amount',  filter: 'agNumberColumnFilter', sortable: true, width: 130, valueFormatter: formatCurrencyGrid, cellStyle: { fontWeight: '600', color: '#1f2937' } },
-		{ headerName: 'Pending',  field: 'pending_amount',filter: 'agNumberColumnFilter', sortable: true, pinned: 'right',width: 140, valueFormatter: formatCurrencyGrid, cellStyle: { fontWeight: 'bold', color: '#dc2626' } },
+		{ headerName: 'Pending',  field: 'pending_amount',filter: 'agNumberColumnFilter', sortable: true, pinned: 'right', width: 140, valueFormatter: formatCurrencyGrid, cellStyle: { fontWeight: 'bold', color: '#dc2626' } },
 	], []);
 
 	const labourPendingColumnDefs = useMemo(() => [
@@ -534,14 +537,13 @@ function Dashboard() {
 		{ headerName: 'Site',        field: 'site_name',     filter: 'agTextColumnFilter',   sortable: true, width: 150 },
 		{ headerName: 'Labour Type', field: 'labour_name',   filter: 'agTextColumnFilter',   sortable: true, width: 150 },
 		{ headerName: 'Total',       field: 'total_amount',  filter: 'agNumberColumnFilter', sortable: true, width: 130, valueFormatter: formatCurrencyGrid, cellStyle: { fontWeight: '600', color: '#1f2937' } },
-		{ headerName: 'Pending',     field: 'pending_amount',filter: 'agNumberColumnFilter', sortable: true,  pinned: 'right', width: 140, valueFormatter: formatCurrencyGrid, cellStyle: { fontWeight: 'bold', color: '#dc2626' } },
+		{ headerName: 'Pending',     field: 'pending_amount',filter: 'agNumberColumnFilter', sortable: true, pinned: 'right', width: 140, valueFormatter: formatCurrencyGrid, cellStyle: { fontWeight: 'bold', color: '#dc2626' } },
 	], []);
 
 	const siteSummaryColumnDefs = useMemo(() => [
 		{ headerName: '#', width: 60, sortable: false, pinned: 'left', valueGetter: (p) => (p.node.rowIndex ?? 0) + 1 },
-		{ headerName: 'Site',   field: 'name',   sortable: true, flex: 1, minWidth: 150 },
+		{ headerName: 'Site',          field: 'name',          sortable: true, flex: 1, minWidth: 150 },
 		{ headerName: 'Start Date',    field: 'start_date',    sortable: true, width: 130, valueFormatter: formatDateGrid },
-		// { headerName: 'End Date',      field: 'end_date',      sortable: true, width: 130, valueFormatter: formatDateGrid },
 		{ headerName: 'Budget',        field: 'total_budget',  sortable: true, width: 140, valueFormatter: formatCurrencyGrid, cellStyle: { fontWeight: '600' } },
 		{ headerName: 'Total Expense', field: 'total_expense', sortable: true, width: 150, valueFormatter: formatCurrencyGrid, cellStyle: { color: '#b45309', fontWeight: '600' } },
 		{ headerName: 'Client Paid',   field: 'client_paid',   sortable: true, width: 140, valueFormatter: formatCurrencyGrid, cellStyle: { color: '#059669', fontWeight: '600' } },
@@ -550,37 +552,8 @@ function Dashboard() {
 			valueFormatter: formatCurrencyGrid,
 			cellStyle: (p) => ({ color: p.value > 0 ? '#dc2626' : '#6b7280', fontWeight: '600' }),
 		},
-		// {
-		// 	headerName: 'Budget Used', field: 'budget_used_pct', sortable: true, width: 150,
-		// 	cellRenderer: (p) => (
-		// 		<div className="flex items-center gap-2 h-full">
-		// 			<div className="flex-1 bg-gray-200 rounded-full h-2">
-		// 				<div
-		// 					className={`h-2 rounded-full ${p.value >= 90 ? 'bg-red-500' : p.value >= 70 ? 'bg-amber-500' : 'bg-emerald-500'}`}
-		// 					style={{ width: `${Math.min(p.value || 0, 100)}%` }}
-		// 				/>
-		// 			</div>
-		// 			<span className="text-xs font-semibold text-gray-700 w-9 text-right">{p.value || 0}%</span>
-		// 		</div>
-		// 	),
-		// },
-		// {
-		// 	headerName: 'Status', field: 'status', sortable: true, width: 120,
-		// 	cellRenderer: (p) => {
-		// 		const map = {
-		// 			planning:  'bg-amber-100 text-amber-800',
-		// 			active:    'bg-emerald-100 text-emerald-800',
-		// 			completed: 'bg-blue-100 text-blue-800',
-		// 		};
-		// 		return (
-		// 			<span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${map[p.value] || 'bg-gray-100 text-gray-800'}`}>
-		// 				{p.value?.charAt(0).toUpperCase() + p.value?.slice(1)}
-		// 			</span>
-		// 		);
-		// 	},
-		// },
 		{
-			headerName: 'Actions', width: 200, sortable: false, pinned: 'right',           
+			headerName: 'Actions', width: 200, sortable: false, pinned: 'right',
 			cellRenderer: (p) => (
 				<div className="flex items-center gap-2 h-full">
 					<button
@@ -635,8 +608,6 @@ function Dashboard() {
 		return items.filter(i => i && i !== 'N/A').sort();
 	}, [transactions]);
 
-	// ─── Site summary: client-side search (for name/client search within returned data) ──
-	// NOTE: server already filters by site_id; this handles free-text search on top
 	const filteredSiteSummary = useMemo(() => {
 		if (!siteSummarySearch) return siteSummary;
 		const q = siteSummarySearch.toLowerCase();
@@ -750,6 +721,7 @@ function Dashboard() {
 					selectedSite ? 'lg:grid-cols-3 xl:grid-cols-6' : 'lg:grid-cols-2 xl:grid-cols-4'
 				}`}>
 					{counterConfig
+						.filter(c => isAdmin || !c.adminOnly)       
 						.filter(c => selectedSite || (c.id !== 'total-budget' && c.id !== 'client-paid'))
 						.map((counter, index) => {
 							const IconComponent = counter.icon;
@@ -814,90 +786,91 @@ function Dashboard() {
 						})}
 				</div>
 
-				{/* ── Cash Flow + Budget ── */}
-				<div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-					{dashboardData?.cashFlow && (
-						<div className={`p-4 rounded-lg shadow-sm border transition-all duration-300 ${
-							dashboardData.cashFlow.status === 'surplus'
-								? 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-200'
-								: 'bg-gradient-to-r from-red-50 to-orange-50 border-red-200'
-						}`}>
-							<div className="flex items-center justify-between mb-3">
-								<div className="flex items-center gap-2">
-									<div className={`p-2 rounded-lg ${dashboardData.cashFlow.status === 'surplus' ? 'bg-green-500' : 'bg-red-500'}`}>
-										<Activity className="h-5 w-5 text-white" />
+				{/* ── Cash Flow + Budget Remaining (admin / superadmin only) ── */}
+				{isAdmin && (
+					<div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+						{dashboardData?.cashFlow && (
+							<div className={`p-4 rounded-lg shadow-sm border transition-all duration-300 ${
+								dashboardData.cashFlow.status === 'surplus'
+									? 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-200'
+									: 'bg-gradient-to-r from-red-50 to-orange-50 border-red-200'
+							}`}>
+								<div className="flex items-center justify-between mb-3">
+									<div className="flex items-center gap-2">
+										<div className={`p-2 rounded-lg ${dashboardData.cashFlow.status === 'surplus' ? 'bg-green-500' : 'bg-red-500'}`}>
+											<Activity className="h-5 w-5 text-white" />
+										</div>
+										<div>
+											<h3 className="text-sm font-semibold text-gray-700">Cash Flow</h3>
+											<p className="text-xs text-gray-600">{dashboardData.cashFlow.status === 'surplus' ? 'Surplus' : 'Deficit'}</p>
+										</div>
 									</div>
-									<div>
-										<h3 className="text-sm font-semibold text-gray-700">Cash Flow</h3>
-										<p className="text-xs text-gray-600">{dashboardData.cashFlow.status === 'surplus' ? 'Surplus' : 'Deficit'}</p>
-									</div>
+									<span className={`${getValueFontSize(formatCurrency(Math.abs(dashboardData.cashFlow.amount)))} font-bold ${
+										dashboardData.cashFlow.status === 'surplus' ? 'text-green-700' : 'text-red-700'
+									} break-words leading-tight text-right`}>
+										{formatCurrency(Math.abs(dashboardData.cashFlow.amount))}
+									</span>
 								</div>
-								<span className={`${getValueFontSize(formatCurrency(Math.abs(dashboardData.cashFlow.amount)))} font-bold ${
-									dashboardData.cashFlow.status === 'surplus' ? 'text-green-700' : 'text-red-700'
-								} break-words leading-tight text-right`}>
-									{formatCurrency(Math.abs(dashboardData.cashFlow.amount))}
-								</span>
-							</div>
-							<div className="flex items-center justify-between text-xs">
-								<span className="font-medium text-gray-600">
-									{Math.abs(dashboardData.cashFlow.percentage).toFixed(2)}% of budget
-								</span>
-								<span className={`font-semibold ${dashboardData.cashFlow.status === 'surplus' ? 'text-green-700' : 'text-red-700'}`}>
-									{dashboardData.cashFlow.status === 'surplus'
-										? 'Client paid more than expenses'
-										: 'Expenses exceed client payments'}
-								</span>
-							</div>
-							<div className="w-full bg-gray-200 rounded-full h-2 mt-2">
-								<div
-									className={`h-2 rounded-full transition-all duration-500 ${dashboardData.cashFlow.status === 'surplus' ? 'bg-green-600' : 'bg-red-600'}`}
-									style={{ width: `${Math.min(Math.abs(dashboardData.cashFlow.percentage), 100)}%` }}
-								/>
-							</div>
-						</div>
-					)}
-
-					{dashboardData?.budgetUtilization && (
-						<div className="p-4 rounded-lg shadow-sm bg-white border border-gray-200 transition-all duration-300">
-							<div className="flex items-center justify-between mb-3">
-								<div className="flex items-center gap-2">
-									<div className="bg-blue-500 p-2 rounded-lg">
-										<Wallet className="h-5 w-5 text-white" />
-									</div>
-									<div>
-										<h3 className="text-sm font-semibold text-gray-700">Budget Remaining</h3>
-										<p className="text-xs text-gray-600">Available for expenses</p>
-									</div>
+								<div className="flex items-center justify-between text-xs">
+									<span className="font-medium text-gray-600">
+										{Math.abs(dashboardData.cashFlow.percentage).toFixed(2)}% of budget
+									</span>
+									<span className={`font-semibold ${dashboardData.cashFlow.status === 'surplus' ? 'text-green-700' : 'text-red-700'}`}>
+										{dashboardData.cashFlow.status === 'surplus'
+											? 'Client paid more than expenses'
+											: 'Expenses exceed client payments'}
+									</span>
 								</div>
-								<span className={`${getValueFontSize(formatCurrency(dashboardData.budgetUtilization.remaining))} font-bold text-black break-words leading-tight text-right`}>
-									{formatCurrency(dashboardData.budgetUtilization.remaining)}
-								</span>
+								<div className="w-full bg-gray-200 rounded-full h-2 mt-2">
+									<div
+										className={`h-2 rounded-full transition-all duration-500 ${dashboardData.cashFlow.status === 'surplus' ? 'bg-green-600' : 'bg-red-600'}`}
+										style={{ width: `${Math.min(Math.abs(dashboardData.cashFlow.percentage), 100)}%` }}
+									/>
+								</div>
 							</div>
-							<div className="flex items-center justify-between text-xs mb-2">
-								<span className="font-medium text-gray-600">
-									{dashboardData.budgetUtilization.remainingPercentage.toFixed(2)}% of total budget
-								</span>
-								<span className="font-semibold text-gray-600">
-									{dashboardData.budgetUtilization.percentage.toFixed(2)}% utilized
-								</span>
-							</div>
-							<div className="w-full bg-gray-200 rounded-full h-2">
-								<div
-									className="bg-blue-600 h-2 rounded-full transition-all duration-500"
-									style={{ width: `${Math.min(dashboardData.budgetUtilization.remainingPercentage, 100)}%` }}
-								/>
-							</div>
-						</div>
-					)}
-				</div>
+						)}
 
-				{/* ── Site Summary Table ── */}				
+						{dashboardData?.budgetUtilization && (
+							<div className="p-4 rounded-lg shadow-sm bg-white border border-gray-200 transition-all duration-300">
+								<div className="flex items-center justify-between mb-3">
+									<div className="flex items-center gap-2">
+										<div className="bg-blue-500 p-2 rounded-lg">
+											<Wallet className="h-5 w-5 text-white" />
+										</div>
+										<div>
+											<h3 className="text-sm font-semibold text-gray-700">Budget Remaining</h3>
+											<p className="text-xs text-gray-600">Available for expenses</p>
+										</div>
+									</div>
+									<span className={`${getValueFontSize(formatCurrency(dashboardData.budgetUtilization.remaining))} font-bold text-black break-words leading-tight text-right`}>
+										{formatCurrency(dashboardData.budgetUtilization.remaining)}
+									</span>
+								</div>
+								<div className="flex items-center justify-between text-xs mb-2">
+									<span className="font-medium text-gray-600">
+										{dashboardData.budgetUtilization.remainingPercentage.toFixed(2)}% of total budget
+									</span>
+									<span className="font-semibold text-gray-600">
+										{dashboardData.budgetUtilization.percentage.toFixed(2)}% utilized
+									</span>
+								</div>
+								<div className="w-full bg-gray-200 rounded-full h-2">
+									<div
+										className="bg-blue-600 h-2 rounded-full transition-all duration-500"
+										style={{ width: `${Math.min(dashboardData.budgetUtilization.remainingPercentage, 100)}%` }}
+									/>
+								</div>
+							</div>
+						)}
+					</div>
+				)}
+
+				{/* ── Site Summary Table ── */}
 				<div className="mt-8">
 					<div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
 						<div>
 							<h2 className="text-xl font-bold">
 								Site Summary
-								{/* Show which site is being viewed when filtered */}
 								{selectedSite && (
 									<span className="ml-2 text-base font-normal text-gray-500">
 										— {getSelectedSiteName()}

@@ -1,25 +1,40 @@
 import React, { useState, useMemo } from "react"
-import { Check, X, Search, ChevronDown, ArrowLeft, Package, ClipboardCheck } from "lucide-react"
+import { Check, X, Search, ChevronDown, ArrowLeft, Package, ClipboardCheck, IndianRupee } from "lucide-react"
 import Modal from "../components/modal"
 import { useTheme } from "../context/themeContext"
 import { ThemeUI } from "../context/themeUI"
+
 const WhatsAppIcon = ({ size = 16, color = "white" }) => (
 	<svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
 		<path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
 	</svg>
 )
-//Material Selector
+
+// ── Payment Mode Options ──
+const PAYMENT_MODES = [
+	{ value: "cash",         label: "Cash" },
+	{ value: "cheque",       label: "Cheque" },
+	{ value: "bank_transfer",label: "Bank Transfer" },
+	{ value: "upi",          label: "UPI" },
+	{ value: "card",         label: "Card" },
+	{ value: "other",        label: "Other" },
+]
+
+// ── Material Selector (unchanged) ──
 function MaterialSelector({ materials = [], selected, onChange }) {
 	const [search, setSearch] = useState("")
 	const [open, setOpen]     = useState(false)
-	const getUnitName         = (unit) => {
+
+	const getUnitName = (unit) => {
 		if(!unit) return ""
 		if(typeof unit === "object") return unit.name ?? ""
 		return unit
 	}
+
 	const filtered = materials.filter(m =>
 		m.name.toLowerCase().includes(search.toLowerCase())
 	)
+
 	const toggle = (mat) => {
 		const exists = selected.find(s => s.id === mat.id)
 		if(exists){
@@ -28,12 +43,15 @@ function MaterialSelector({ materials = [], selected, onChange }) {
 			onChange([...selected, { ...mat, unit: getUnitName(mat.unit), quantity: "" }])
 		}
 	}
+
 	const updateQty = (id, qty) => {
 		onChange(selected.map(s => s.id === id ? { ...s, quantity: qty } : s))
 	}
+
 	const removeItem = (id) => {
 		onChange(selected.filter(s => s.id !== id))
 	}
+
 	return(
 		<div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
 			{/* Dropdown trigger */}
@@ -59,6 +77,7 @@ function MaterialSelector({ materials = [], selected, onChange }) {
 					style={{ color: "#9ca3af", transform: open ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}
 				/>
 			</button>
+
 			{/* Dropdown list */}
 			{open && (
 				<div style={{
@@ -121,6 +140,7 @@ function MaterialSelector({ materials = [], selected, onChange }) {
 					</div>
 				</div>
 			)}
+
 			{/* Selected materials — 3 per row grid */}
 			{selected.length > 0 && (
 				<div style={{
@@ -136,7 +156,6 @@ function MaterialSelector({ materials = [], selected, onChange }) {
 							background: "#f9fafb", borderRadius: 10,
 							border: "1.5px solid #e5e7eb", minWidth: 0
 						}}>
-							{/* Remove × */}
 							<button
 								type="button"
 								onClick={() => removeItem(mat.id)}
@@ -148,7 +167,6 @@ function MaterialSelector({ materials = [], selected, onChange }) {
 							>
 								<X size={12} />
 							</button>
-							{/* Material name — truncated with tooltip */}
 							<div
 								title={mat.name}
 								style={{
@@ -159,7 +177,6 @@ function MaterialSelector({ materials = [], selected, onChange }) {
 							>
 								{mat.name}
 							</div>
-							{/* Qty input + unit */}
 							<div style={{ display: "flex", alignItems: "center", gap: 4 }}>
 								<input
 									type="number"
@@ -186,6 +203,131 @@ function MaterialSelector({ materials = [], selected, onChange }) {
 		</div>
 	)
 }
+
+// ── Payment Received Form ──
+function PaymentReceivedForm({ paymentData, onChange, theme }) {
+	const { amount, paymentMode, paymentDate, transactionRef, invoiceNumber } = paymentData
+
+	const inputStyle = {
+		width: "100%", padding: "10px 12px", borderRadius: 10,
+		border: "1.5px solid #e5e7eb", fontFamily: "inherit",
+		fontSize: 13, color: "#374151", outline: "none",
+		boxSizing: "border-box", background: "#fff",
+		transition: "border-color 0.15s"
+	}
+
+	const labelStyle = {
+		display: "block", fontSize: 13, fontWeight: 600,
+		color: "#374151", marginBottom: 6
+	}
+
+	return (
+		<div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+			{/* Amount — prominent */}
+			<div>
+				<label style={labelStyle}>
+					Payment Amount <span style={{ color: "#ef4444", marginLeft: 2 }}>*</span>
+				</label>
+				<div style={{ position: "relative" }}>
+					<span style={{
+						position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)",
+						fontSize: 15, fontWeight: 700, color: "#16a34a", pointerEvents: "none"
+					}}>₹</span>
+					<input
+						type="number"
+						min="0"
+						step="0.01"
+						placeholder="0.00"
+						value={amount}
+						onChange={e => onChange({ ...paymentData, amount: e.target.value })}
+						style={{
+							...inputStyle,
+							paddingLeft: 28,
+							fontSize: 15, fontWeight: 600,
+							border: "1.5px solid #bbf7d0",
+							background: "#f0fdf4",
+						}}
+						onFocus={e => e.target.style.borderColor = theme.primaryGradientStart}
+						onBlur={e  => e.target.style.borderColor = "#bbf7d0"}
+					/>
+				</div>
+			</div>
+
+			{/* Payment Date + Mode — side by side */}
+			<div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+				<div>
+					<label style={labelStyle}>Payment Date <span style={{ color: "#ef4444", marginLeft: 2 }}>*</span></label>
+					<input
+						type="date"
+						value={paymentDate}
+						onChange={e => onChange({ ...paymentData, paymentDate: e.target.value })}
+						style={inputStyle}
+						onFocus={e => e.target.style.borderColor = theme.primaryGradientStart}
+						onBlur={e  => e.target.style.borderColor = "#e5e7eb"}
+					/>
+				</div>
+				<div>
+					<label style={labelStyle}>Payment Mode <span style={{ color: "#ef4444", marginLeft: 2 }}>*</span></label>
+					<select
+						value={paymentMode}
+						onChange={e => onChange({ ...paymentData, paymentMode: e.target.value })}
+						style={{ ...inputStyle, cursor: "pointer" }}
+						onFocus={e => e.target.style.borderColor = theme.primaryGradientStart}
+						onBlur={e  => e.target.style.borderColor = "#e5e7eb"}
+					>
+						{PAYMENT_MODES.map(m => (
+							<option key={m.value} value={m.value}>{m.label}</option>
+						))}
+					</select>
+				</div>
+			</div>
+
+			{/* Transaction Ref + Invoice No — side by side */}
+			<div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+				<div>
+					<label style={labelStyle}>
+						Transaction Ref
+						<span style={{ fontSize: 11, color: "#9ca3af", fontWeight: 400, marginLeft: 4 }}>(optional)</span>
+					</label>
+					<input
+						type="text"
+						placeholder="UPI ID / Cheque No / TXN ID"
+						value={transactionRef}
+						onChange={e => onChange({ ...paymentData, transactionRef: e.target.value })}
+						style={inputStyle}
+						onFocus={e => e.target.style.borderColor = theme.primaryGradientStart}
+						onBlur={e  => e.target.style.borderColor = "#e5e7eb"}
+					/>
+				</div>
+				<div>
+					<label style={labelStyle}>
+						Invoice Number
+						<span style={{ fontSize: 11, color: "#9ca3af", fontWeight: 400, marginLeft: 4 }}>(optional)</span>
+					</label>
+					<input
+						type="text"
+						placeholder="INV-001"
+						value={invoiceNumber}
+						onChange={e => onChange({ ...paymentData, invoiceNumber: e.target.value })}
+						style={inputStyle}
+						onFocus={e => e.target.style.borderColor = theme.primaryGradientStart}
+						onBlur={e  => e.target.style.borderColor = "#e5e7eb"}
+					/>
+				</div>
+			</div>
+		</div>
+	)
+}
+
+// ── Default payment state ──
+const INITIAL_PAYMENT = {
+	amount:         "",
+	paymentMode:    "cash",
+	paymentDate:    new Date().toISOString().split("T")[0],
+	transactionRef: "",
+	invoiceNumber:  "",
+}
+
 export default function VendorWhatsAppModal({
 	vendor,
 	materials   = [],
@@ -198,6 +340,8 @@ export default function VendorWhatsAppModal({
 	const [selectedMaterials, setSelectedMaterials] = useState([])
 	const [customNote, setCustomNote]               = useState("")
 	const [receivedDate, setReceivedDate]           = useState(new Date().toISOString().split("T")[0])
+	const [paymentData, setPaymentData]             = useState(INITIAL_PAYMENT)
+
 	const TEMPLATES = [
 		{
 			id:    "enquiry",
@@ -211,15 +355,26 @@ export default function VendorWhatsAppModal({
 			label: "Materials Received",
 			desc:  "Confirm to vendor that materials have been received",
 		},
+		{
+			id:    "payment",
+			icon:  <IndianRupee size={20} />,
+			label: "Payment Received",
+			desc:  "Notify vendor of payment made against their invoice",
+		},
 	]
+
+	const paymentModeLabel = PAYMENT_MODES.find(m => m.value === paymentData.paymentMode)?.label || "Cash"
+
 	const previewMessage = useMemo(() => {
 		if(!activeTemplate) return ""
+
 		if(activeTemplate === "enquiry"){
 			const lines = selectedMaterials.length > 0
 				? selectedMaterials.map(m => `• ${m.name}\n  Quantity: ${m.quantity || "__"} ${m.unit}`).join("\n")
 				: "• [No materials selected]"
 			return `Dear ${vendor.name},\n\nWe would like to enquire about the following materials:\n\n*Materials Required:*\n${lines}\n\nPlease provide your best rates and availability.\n\nThank you,\n${siteName}`
 		}
+
 		if(activeTemplate === "received"){
 			const lines = selectedMaterials.length > 0
 				? selectedMaterials.map(m => `• ${m.name} — ${m.quantity || "__"} ${m.unit}`).join("\n")
@@ -227,28 +382,49 @@ export default function VendorWhatsAppModal({
 			return `Dear ${vendor.name},\n\nWe are pleased to confirm that the following materials have been received at our site on *${receivedDate}*:\n\n*Materials Received:*\n${lines}\n\nThank you for the timely delivery. Please share the invoice at your earliest convenience.\n\nRegards,\n${siteName}`
 		}
 
+		if(activeTemplate === "payment"){
+			const amt     = paymentData.amount ? `₹${Number(paymentData.amount).toLocaleString("en-IN")}` : "₹__"
+			const refLine = paymentData.transactionRef ? `\nTransaction Ref: *${paymentData.transactionRef}*` : ""
+			const invLine = paymentData.invoiceNumber  ? `\nInvoice No: *${paymentData.invoiceNumber}*`      : ""
+			return `Dear ${vendor.name},\n\nWe would like to inform you that a payment of *${amt}* has been made to your account.\n\n*Payment Details:*\n• Date: *${paymentData.paymentDate}*\n• Mode: *${paymentModeLabel}*${refLine}${invLine}\n\nKindly acknowledge receipt of this payment.\n\nThank you,\n${siteName}`
+		}
+
 		return ""
-	}, [activeTemplate, selectedMaterials, vendor, siteName, receivedDate])
+	}, [activeTemplate, selectedMaterials, vendor, siteName, receivedDate, paymentData, paymentModeLabel])
+
 	const finalMessage = previewMessage + (customNote.trim() ? `\n\n${customNote.trim()}` : "")
-	const canSend      = selectedMaterials.length > 0
+
+	// Validation per template
+	const canSend = useMemo(() => {
+		if(activeTemplate === "enquiry" || activeTemplate === "received") return selectedMaterials.length > 0
+		if(activeTemplate === "payment") return !!paymentData.amount && Number(paymentData.amount) > 0
+		return false
+	}, [activeTemplate, selectedMaterials, paymentData.amount])
+
 	const handleSend = () => {
 		const phone   = vendor.phone?.replace(/\D/g, "")
 		const encoded = encodeURIComponent(finalMessage)
 		window.open(`https://wa.me/91${phone}?text=${encoded}`, "_blank")
 	}
+
 	const handleTemplateSelect = (id) => {
 		setActiveTemplate(id)
 		setSelectedMaterials([])
 		setCustomNote("")
+		setPaymentData(INITIAL_PAYMENT)
 		setStep("compose")
 	}
+
 	const handleBack = () => {
 		setStep("pick")
 		setActiveTemplate(null)
 		setSelectedMaterials([])
 		setCustomNote("")
+		setPaymentData(INITIAL_PAYMENT)
 	}
+
 	const tpl = TEMPLATES.find(t => t.id === activeTemplate)
+
 	const modalTitle = (
 		<div style={{ display: "flex", alignItems: "center", gap: 10 }}>
 			<div style={{
@@ -268,6 +444,7 @@ export default function VendorWhatsAppModal({
 			</div>
 		</div>
 	)
+
 	return (
 		<Modal
 			isOpen={true}
@@ -325,6 +502,7 @@ export default function VendorWhatsAppModal({
 					))}
 				</div>
 			)}
+
 			{/* ── Step 2: Compose ── */}
 			{step === "compose" && tpl && (
 				<div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
@@ -340,29 +518,43 @@ export default function VendorWhatsAppModal({
 					>
 						<ArrowLeft size={13} /> Back to templates
 					</button>
-					{/* Date received — only for received template */}
-					{activeTemplate === "received" && (
-						<ThemeUI.FormField label="Date Received" name="received_date">
-							<ThemeUI.Input
-								type="date"
-								name="received_date"
-								value={receivedDate}
-								onChange={e => setReceivedDate(e.target.value)}
-							/>
-						</ThemeUI.FormField>
+
+					{/* ── Material Enquiry & Received: date + material selector ── */}
+					{(activeTemplate === "enquiry" || activeTemplate === "received") && (
+						<>
+							{activeTemplate === "received" && (
+								<ThemeUI.FormField label="Date Received" name="received_date">
+									<ThemeUI.Input
+										type="date"
+										name="received_date"
+										value={receivedDate}
+										onChange={e => setReceivedDate(e.target.value)}
+									/>
+								</ThemeUI.FormField>
+							)}
+							<div>
+								<label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 8 }}>
+									{activeTemplate === "enquiry" ? "Materials to Enquire" : "Materials Received"}
+									<span style={{ color: "#ef4444", marginLeft: 2 }}>*</span>
+								</label>
+								<MaterialSelector
+									materials={materials}
+									selected={selectedMaterials}
+									onChange={setSelectedMaterials}
+								/>
+							</div>
+						</>
 					)}
-					{/* Material selector */}
-					<div>
-						<label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 8 }}>
-							{activeTemplate === "enquiry" ? "Materials to Enquire" : "Materials Received"}
-							<span style={{ color: "#ef4444", marginLeft: 2 }}>*</span>
-						</label>
-						<MaterialSelector
-							materials={materials}
-							selected={selectedMaterials}
-							onChange={setSelectedMaterials}
+
+					{/* ── Payment Received form ── */}
+					{activeTemplate === "payment" && (
+						<PaymentReceivedForm
+							paymentData={paymentData}
+							onChange={setPaymentData}
+							theme={theme}
 						/>
-					</div>
+					)}
+
 					{/* Message preview */}
 					<div>
 						<label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 8 }}>
@@ -373,11 +565,12 @@ export default function VendorWhatsAppModal({
 							borderRadius: 12, padding: "14px 16px",
 							fontSize: 13, color: "#166534", lineHeight: 1.75,
 							whiteSpace: "pre-wrap", minHeight: 100,
-							maxHeight: 200, overflowY: "auto", fontFamily: "inherit"
+							maxHeight: 220, overflowY: "auto", fontFamily: "inherit"
 						}}>
-							{finalMessage}
+							{finalMessage || <span style={{ color: "#9ca3af" }}>Fill in the details above to preview the message…</span>}
 						</div>
 					</div>
+
 					{/* Optional note */}
 					<div>
 						<label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 8 }}>
@@ -400,7 +593,8 @@ export default function VendorWhatsAppModal({
 							onBlur={e  => e.target.style.borderColor = "#e5e7eb"}
 						/>
 					</div>
-					{/* Footer buttons — right-aligned */}
+
+					{/* Footer buttons */}
 					<div style={{ display: "flex", justifyContent: "flex-end", gap: 10, paddingTop: 2 }}>
 						<ThemeUI.Button
 							onClick={onClose}
@@ -408,7 +602,6 @@ export default function VendorWhatsAppModal({
 						>
 							Cancel
 						</ThemeUI.Button>
-
 						<ThemeUI.Button
 							onClick={handleSend}
 							disabled={!canSend}

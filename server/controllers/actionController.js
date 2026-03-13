@@ -5,15 +5,15 @@ const { v4: uuidv4 }   = require('uuid');
 const authController   = require('./authController');
 const BASE_URL         = process.env.BASE_URL || 'http://localhost:5000';
 const ALLOWED_STATUSES = ['active', 'completed'];
+
 const actionController = {
 
     getSiteSummary: async (req, res) => {
-        try{
+        try {
             const { site_id, page = 1, limit = 10 } = req.query;
 
-            // Resolve allowed sites for this user
             const allowedIds = await resolveAllowedSiteIds(req.user, site_id || null);
-            if(allowedIds.length === 0){
+            if (allowedIds.length === 0) {
                 return res.status(200).json({
                     success:    true,
                     message:    'Site summary fetched successfully',
@@ -50,13 +50,16 @@ const actionController = {
                         WHERE site_id = :site_id AND status = 1
                     `, { replacements: { site_id: site.id }, type: QueryTypes.SELECT }),
 
+                    // ── Only approved labour entries count toward financials ──
                     sequelize.query(`
                         SELECT
                             COALESCE(SUM(credit_entry), 0)                                                AS paid,
                             COALESCE(SUM(no_of_workers * rate_per_worker), 0)                             AS total,
                             COALESCE(SUM(no_of_workers * rate_per_worker) - SUM(credit_entry), 0)         AS pending
                         FROM labour_entrys
-                        WHERE site_id = :site_id AND status = 1
+                        WHERE site_id = :site_id
+                          AND status = 1
+                          AND approval_status = 'approved'
                     `, { replacements: { site_id: site.id }, type: QueryTypes.SELECT }),
 
                     SitePayment.findOne({
@@ -111,19 +114,18 @@ const actionController = {
                     total_pages: Math.ceil(totalCount / limitNum),
                 },
             });
-        }catch(err){
+        } catch (err) {
             console.error('Site summary error:', err);
             res.status(500).json({ success: false, message: 'Failed to fetch site summary', error: err.message });
         }
     },
 
     getSitePayoutPending: async (req, res) => {
-        try{
+        try {
             const { site_id } = req.params;
 
-            // Verify this user can access this site
             const allowedIds = await resolveAllowedSiteIds(req.user, site_id);
-            if(allowedIds.length === 0){
+            if (allowedIds.length === 0) {
                 return res.status(403).json({ success: false, message: 'Access denied to this site.' });
             }
 
@@ -144,11 +146,12 @@ const actionController = {
                     LEFT JOIN materials m ON m.id = me.material_id
                     LEFT JOIN vendors   v ON v.id = me.vendor_id
                     WHERE me.site_id = :site_id
-                    AND me.status  = 1
-                    AND (me.quantity * me.rate + me.additional_charges - me.credit_entry) > 0
+                      AND me.status  = 1
+                      AND (me.quantity * me.rate + me.additional_charges - me.credit_entry) > 0
                     ORDER BY me.date DESC
                 `, { replacements: { site_id: parseInt(site_id) }, type: QueryTypes.SELECT }),
 
+                // ── Only approved labour entries in payout pending ──
                 sequelize.query(`
                     SELECT
                         le.id,
@@ -162,8 +165,9 @@ const actionController = {
                     FROM labour_entrys le
                     LEFT JOIN labours l ON l.id = le.labour_id
                     WHERE le.site_id = :site_id
-                    AND le.status  = 1
-                    AND (le.no_of_workers * le.rate_per_worker - le.credit_entry) > 0
+                      AND le.status  = 1
+                      AND le.approval_status = 'approved'
+                      AND (le.no_of_workers * le.rate_per_worker - le.credit_entry) > 0
                     ORDER BY le.date DESC
                 `, { replacements: { site_id: parseInt(site_id) }, type: QueryTypes.SELECT }),
             ]);
@@ -206,23 +210,22 @@ const actionController = {
                     material: totalMaterialPending,
                     labour:   totalLabourPending,
                     total:    totalMaterialPending + totalLabourPending,
-                }
+                },
             });
-        }catch(err){
+        } catch (err) {
             console.error('Payout pending error:', err);
             res.status(500).json({ success: false, message: 'Failed to fetch payout data', error: err.message });
         }
     },
 
     markMaterialEntryPaid: async (req, res) => {
-        try{
+        try {
             const { entry_id } = req.params;
             const entry = await MaterialEntry.findByPk(entry_id);
-            if(!entry) return res.status(404).json({ success: false, message: 'Entry not found' });
+            if (!entry) return res.status(404).json({ success: false, message: 'Entry not found' });
 
-            // Check the entry's site is accessible by this user
             const allowedIds = await resolveAllowedSiteIds(req.user, entry.site_id);
-            if(allowedIds.length === 0){
+            if (allowedIds.length === 0) {
                 return res.status(403).json({ success: false, message: 'Access denied to this site.' });
             }
 
@@ -230,72 +233,70 @@ const actionController = {
                 + parseFloat(entry.additional_charges || 0);
             await entry.update({ credit_entry: totalAmount, debit_entry: 0, updated_at: new Date() });
             res.status(200).json({ success: true, message: 'Material entry marked as paid' });
-        }catch(err){
+        } catch (err) {
             console.error('Mark material paid error:', err);
             res.status(500).json({ success: false, message: 'Failed to update entry', error: err.message });
         }
     },
 
     markLabourEntryPaid: async (req, res) => {
-        try{
+        try {
             const { entry_id } = req.params;
-            const entry = await LabourEntry.findByPk(entry_id);
-            if(!entry) return res.status(404).json({ success: false, message: 'Entry not found' });
+            // ── Only approved entries can be marked paid ──
+            const entry = await LabourEntry.findOne({
+                where: { id: entry_id, approval_status: 'approved' },
+            });
+            if (!entry) return res.status(404).json({ success: false, message: 'Entry not found or not yet approved' });
 
-            // Check the entry's site is accessible by this user
             const allowedIds = await resolveAllowedSiteIds(req.user, entry.site_id);
-            if(allowedIds.length === 0){
+            if (allowedIds.length === 0) {
                 return res.status(403).json({ success: false, message: 'Access denied to this site.' });
             }
 
             const totalAmount = parseFloat(entry.no_of_workers) * parseFloat(entry.rate_per_worker);
             await entry.update({ credit_entry: totalAmount, debit_entry: 0, updated_at: new Date() });
             res.status(200).json({ success: true, message: 'Labour entry marked as paid' });
-        }catch(err){
+        } catch (err) {
             console.error('Mark labour paid error:', err);
             res.status(500).json({ success: false, message: 'Failed to update entry', error: err.message });
         }
     },
 
     getDashboardStats: async (req, res) => {
-        try{
+        try {
             const { from_date, to_date, site_id } = req.query;
 
-            // Resolve allowed sites for this user
             const allowedIds = await resolveAllowedSiteIds(req.user, site_id || null);
-            if(allowedIds.length === 0){
-                // Return zeroed-out stats — user has no accessible sites
+            if (allowedIds.length === 0) {
                 return res.status(200).json({
                     success: true,
                     message: 'Dashboard data fetched successfully',
                     data: {
-                        activeSites:      { count: 0,    change: 0, changeType: 'neutral' },
-                        totalBudget:      { amount: 0,   change: 0, changeType: 'neutral', percentage: 100 },
-                        materialExpense:  { amount: 0,   change: 0, changeType: 'neutral', percentage: 0 },
-                        labourExpense:    { amount: 0,   change: 0, changeType: 'neutral', percentage: 0 },
-                        totalExpense:     { amount: 0,   change: 0, changeType: 'neutral', percentage: 0 },
-                        clientPayments:   { amount: 0,   change: 0, changeType: 'neutral', percentage: 0, outstanding: 0, outstandingPercentage: 0 },
-                        budgetUtilization:{ percentage: 0, remaining: 0, remainingPercentage: 0 },
-                        cashFlow:         { amount: 0,   percentage: 0, status: 'surplus', changeType: 'neutral' },
+                        activeSites:       { count: 0,  change: 0, changeType: 'neutral' },
+                        totalBudget:       { amount: 0, change: 0, changeType: 'neutral', percentage: 100 },
+                        materialExpense:   { amount: 0, change: 0, changeType: 'neutral', percentage: 0 },
+                        labourExpense:     { amount: 0, change: 0, changeType: 'neutral', percentage: 0 },
+                        totalExpense:      { amount: 0, change: 0, changeType: 'neutral', percentage: 0 },
+                        clientPayments:    { amount: 0, change: 0, changeType: 'neutral', percentage: 0, outstanding: 0, outstandingPercentage: 0 },
+                        budgetUtilization: { percentage: 0, remaining: 0, remainingPercentage: 0 },
+                        cashFlow:          { amount: 0, percentage: 0, status: 'surplus', changeType: 'neutral' },
                     },
                 });
             }
 
-            const dateFilter         = {};
-            const paymentDateFilter  = {};
-            if(from_date && to_date){
-                dateFilter.date          = { [Op.between]: [from_date, to_date] };
+            const dateFilter        = {};
+            const paymentDateFilter = {};
+            if (from_date && to_date) {
+                dateFilter.date                = { [Op.between]: [from_date, to_date] };
                 paymentDateFilter.payment_date = { [Op.between]: [from_date, to_date] };
             }
 
             const siteFilter = { site_id: { [Op.in]: allowedIds } };
 
-            // Active sites count (within allowedIds only)
             const activeSites = await Site.count({
-                where: { status: 'active', is_active: 1, id: { [Op.in]: allowedIds } }
+                where: { status: 'active', is_active: 1, id: { [Op.in]: allowedIds } },
             });
 
-            // Total budget (within allowedIds only)
             const totalBudgetResult = await Site.findOne({
                 attributes: [[fn('COALESCE', fn('SUM', col('total_budget')), 0), 'total']],
                 where:      { is_active: 1, status: { [Op.in]: ALLOWED_STATUSES }, id: { [Op.in]: allowedIds } },
@@ -303,7 +304,6 @@ const actionController = {
             });
             const totalBudget = parseFloat(totalBudgetResult?.total || 0);
 
-            // Expenses
             const materialExpenseResult = await MaterialEntry.findOne({
                 attributes: [[fn('COALESCE', fn('SUM', col('credit_entry')), 0), 'total']],
                 where:      { status: 1, ...dateFilter, ...siteFilter },
@@ -311,15 +311,15 @@ const actionController = {
             });
             const materialExpense = parseFloat(materialExpenseResult?.total || 0);
 
+            // ── Only approved labour entries count toward expense stats ──
             const labourExpenseResult = await LabourEntry.findOne({
                 attributes: [[fn('COALESCE', fn('SUM', col('credit_entry')), 0), 'total']],
-                where:      { status: 1, ...dateFilter, ...siteFilter },
+                where:      { status: 1, approval_status: 'approved', ...dateFilter, ...siteFilter },
                 raw:        true,
             });
             const labourExpense = parseFloat(labourExpenseResult?.total || 0);
             const totalExpense  = materialExpense + labourExpense;
 
-            // Client payments
             const clientPaymentsResult = await SitePayment.findOne({
                 attributes: [[fn('COALESCE', fn('SUM', col('amount')), 0), 'total']],
                 where:      { status: 1, ...paymentDateFilter, ...siteFilter },
@@ -329,10 +329,10 @@ const actionController = {
 
             // Previous period comparison
             let previousPeriodData = { materialExpense: 0, labourExpense: 0, totalExpense: 0, clientPaid: 0 };
-            if(from_date && to_date){
-                const fromDateObj = new Date(from_date);
-                const toDateObj   = new Date(to_date);
-                const daysDiff    = Math.ceil((toDateObj - fromDateObj) / (1000 * 60 * 60 * 24)) + 1;
+            if (from_date && to_date) {
+                const fromDateObj      = new Date(from_date);
+                const toDateObj        = new Date(to_date);
+                const daysDiff         = Math.ceil((toDateObj - fromDateObj) / (1000 * 60 * 60 * 24)) + 1;
                 const previousFromDate = new Date(fromDateObj);
                 previousFromDate.setDate(previousFromDate.getDate() - daysDiff);
                 const previousToDate = new Date(fromDateObj);
@@ -343,16 +343,16 @@ const actionController = {
                         [Op.between]: [
                             previousFromDate.toISOString().split('T')[0],
                             previousToDate.toISOString().split('T')[0],
-                        ]
-                    }
+                        ],
+                    },
                 };
                 const prevPaymentDateFilter = {
                     payment_date: {
                         [Op.between]: [
                             previousFromDate.toISOString().split('T')[0],
                             previousToDate.toISOString().split('T')[0],
-                        ]
-                    }
+                        ],
+                    },
                 };
 
                 const [prevMat, prevLab, prevPay] = await Promise.all([
@@ -361,9 +361,10 @@ const actionController = {
                         where: { status: 1, ...prevDateFilter, ...siteFilter },
                         raw:   true,
                     }),
+                    // ── approved only for previous period too ──
                     LabourEntry.findOne({
                         attributes: [[fn('COALESCE', fn('SUM', col('credit_entry')), 0), 'total']],
-                        where: { status: 1, ...prevDateFilter, ...siteFilter },
+                        where: { status: 1, approval_status: 'approved', ...prevDateFilter, ...siteFilter },
                         raw:   true,
                     }),
                     SitePayment.findOne({
@@ -379,7 +380,7 @@ const actionController = {
             }
 
             const calculateChange = (current, previous) => {
-                if(previous === 0) return current > 0 ? 100 : 0;
+                if (previous === 0) return current > 0 ? 100 : 0;
                 return Math.round(((current - previous) / previous) * 100);
             };
 
@@ -438,29 +439,29 @@ const actionController = {
                     },
                 },
             });
-        }catch(err){
+        } catch (err) {
             console.error('Dashboard stats error:', err);
             res.status(500).json({ success: false, message: 'Failed to fetch dashboard statistics', error: err.message });
         }
     },
 
     getTransactions: async (req, res) => {
-        try{
+        try {
             const { from_date, to_date, site_id, type } = req.query;
 
             const allowedIds = await resolveAllowedSiteIds(req.user, site_id || null);
-            if(allowedIds.length === 0){
+            if (allowedIds.length === 0) {
                 return res.status(200).json({ success: true, message: 'Transactions fetched successfully', data: [], count: 0 });
             }
 
             const dateFilter = {};
-            if(from_date && to_date){
+            if (from_date && to_date) {
                 dateFilter.date = { [Op.between]: [from_date, to_date] };
             }
-            const siteFilter = { site_id: { [Op.in]: allowedIds } };
+            const siteFilter   = { site_id: { [Op.in]: allowedIds } };
             const transactions = [];
 
-            if(!type || type === 'material'){
+            if (!type || type === 'material') {
                 const materialEntries = await MaterialEntry.findAll({
                     where:   { status: 1, ...dateFilter, ...siteFilter },
                     include: [
@@ -496,9 +497,10 @@ const actionController = {
                 });
             }
 
-            if(!type || type === 'labour'){
+            if (!type || type === 'labour') {
+                // ── Only approved labour entries appear in transactions ──
                 const labourEntries = await LabourEntry.findAll({
-                    where:   { status: 1, ...dateFilter, ...siteFilter },
+                    where:   { status: 1, approval_status: 'approved', ...dateFilter, ...siteFilter },
                     include: [
                         { model: Site,   attributes: ['name'], as: 'site'   },
                         { model: Labour, attributes: ['name'], as: 'labour' },
@@ -538,23 +540,23 @@ const actionController = {
                 data:    transactions,
                 count:   transactions.length,
             });
-        }catch(err){
+        } catch (err) {
             console.error('Transaction fetch error:', err);
             res.status(500).json({ success: false, message: 'Failed to fetch transactions', error: err.message });
         }
     },
 
     getMaterialPending: async (req, res) => {
-        try{
+        try {
             const { from_date, to_date, site_id } = req.query;
 
             const allowedIds = await resolveAllowedSiteIds(req.user, site_id || null);
-            if(allowedIds.length === 0){
+            if (allowedIds.length === 0) {
                 return res.status(200).json({ success: true, message: 'Material pending expenses fetched successfully', data: [], total_pending: 0, count: 0 });
             }
 
             const dateFilter = {};
-            if(from_date && to_date){
+            if (from_date && to_date) {
                 dateFilter.date = { [Op.between]: [from_date, to_date] };
             }
             const siteFilter = { site_id: { [Op.in]: allowedIds } };
@@ -599,29 +601,36 @@ const actionController = {
                 total_pending: totalPending,
                 count:         pendingData.length,
             });
-        }catch(err){
+        } catch (err) {
             console.error('Material pending fetch error:', err);
             res.status(500).json({ success: false, message: 'Failed to fetch material pending expenses', error: err.message });
         }
     },
 
     getLabourPending: async (req, res) => {
-        try{
+        try {
             const { from_date, to_date, site_id } = req.query;
 
             const allowedIds = await resolveAllowedSiteIds(req.user, site_id || null);
-            if(allowedIds.length === 0){
+            if (allowedIds.length === 0) {
                 return res.status(200).json({ success: true, message: 'Labour pending expenses fetched successfully', data: [], total_pending: 0, count: 0 });
             }
 
             const dateFilter = {};
-            if(from_date && to_date){
+            if (from_date && to_date) {
                 dateFilter.date = { [Op.between]: [from_date, to_date] };
             }
             const siteFilter = { site_id: { [Op.in]: allowedIds } };
 
+            // ── Only approved labour entries with outstanding debit ──
             const labourPending = await LabourEntry.findAll({
-                where: { status: 1, debit_entry: { [Op.gt]: 0 }, ...dateFilter, ...siteFilter },
+                where: {
+                    status:          1,
+                    approval_status: 'approved',
+                    debit_entry:     { [Op.gt]: 0 },
+                    ...dateFilter,
+                    ...siteFilter,
+                },
                 include: [
                     { model: Site,   attributes: ['name'], as: 'site'   },
                     { model: Labour, attributes: ['name'], as: 'labour' },
@@ -657,17 +666,16 @@ const actionController = {
                 total_pending: totalPending,
                 count:         pendingData.length,
             });
-        }catch(err){
+        } catch (err) {
             console.error('Labour pending fetch error:', err);
             res.status(500).json({ success: false, message: 'Failed to fetch labour pending expenses', error: err.message });
         }
     },
 
     getActiveSites: async (req, res) => {
-        try{
-            // Resolve which sites this user can see
+        try {
             const allowedIds = await resolveAllowedSiteIds(req.user, null);
-            if(allowedIds.length === 0){
+            if (allowedIds.length === 0) {
                 return res.status(200).json({ success: true, message: 'Sites fetched successfully', data: [] });
             }
 
@@ -689,7 +697,7 @@ const actionController = {
             }));
 
             res.status(200).json({ success: true, message: 'Sites fetched successfully', data: formattedSites });
-        }catch(err){
+        } catch (err) {
             console.error('Get sites error:', err);
             res.status(500).json({ success: false, message: 'Failed to fetch sites', error: err.message });
         }
@@ -697,7 +705,7 @@ const actionController = {
 
     loginUser: async (req, res) => {
         let transaction;
-        try{
+        try {
             transaction = await sequelize.transaction();
             const { email, mobile, password, rememberMe } = req.body;
             const user = await User.findOne({
@@ -709,25 +717,25 @@ const actionController = {
                     include:    [{ model: Role, as: 'role', attributes: ['name'] }],
                 }],
             });
-            if(!user){
+            if (!user) {
                 await transaction.rollback();
                 return res.status(401).json({ success: false, message: 'Invalid email/mobile or password' });
             }
             const isPasswordValid = await bcrypt.compare(password, user.password);
-            if(!isPasswordValid){
+            if (!isPasswordValid) {
                 await transaction.rollback();
                 return res.status(401).json({ success: false, message: 'Invalid email/mobile or password' });
             }
-            if(user.status !== 1){
+            if (user.status !== 1) {
                 await transaction.rollback();
                 return res.status(403).json({ success: false, message: 'Account is inactive' });
             }
             const updateData  = { updated_at: new Date() };
             let rememberToken = null;
-            if(rememberMe){
+            if (rememberMe) {
                 rememberToken = uuidv4();
                 updateData.remember_token = rememberToken;
-            }else{
+            } else {
                 updateData.remember_token = null;
             }
             await user.update(updateData, { transaction });
@@ -758,16 +766,16 @@ const actionController = {
                     remember_token: rememberToken,
                 },
             });
-        }catch(err){
-            if(transaction) await transaction.rollback();
+        } catch (err) {
+            if (transaction) await transaction.rollback();
             res.status(500).json({ success: false, message: 'Server error', error: err.message });
         }
     },
 
     logoutUser: async (req, res) => {
-        try{
+        try {
             res.status(200).json({ success: true, message: 'Logged out successfully' });
-        }catch(err){
+        } catch (err) {
             console.error('Logout error:', err);
             res.status(500).json({ success: false, message: 'Something went wrong. Please try again later!' });
         }
@@ -776,38 +784,29 @@ const actionController = {
 
 async function resolveAllowedSiteIds(reqUser, querySiteId = null) {
     const isSuperAdmin = reqUser?.role === 'superadmin';
-    // 1. Get all active/completed sites from DB
+
     const activeRows = await Site.findAll({
         attributes: ['id'],
         where:      { is_active: 1, status: { [Op.in]: ALLOWED_STATUSES } },
         raw:        true,
     });
     const allActiveIds = activeRows.map(s => s.id);
-    // 2. Determine base pool based on role
+
     let basePool;
-    if(isSuperAdmin){
-        // Superadmin sees every active/completed site
+    if (isSuperAdmin) {
         basePool = allActiveIds;
-    }else{
-        // Other roles: only the sites assigned to them
-        const userSiteIds = reqUser?.site_ids || [];  
-        if(userSiteIds.length === 0){
-            // No sites assigned → no access
-            return [];
-        }
-        // Intersect with active/completed sites so stale IDs don't cause issues
+    } else {
+        const userSiteIds = reqUser?.site_ids || [];
+        if (userSiteIds.length === 0) return [];
         basePool = userSiteIds.filter(id => allActiveIds.includes(id));
     }
-    // 3. If a specific site_id was requested, verify it's in the pool
-    if(querySiteId){
+
+    if (querySiteId) {
         const requested = parseInt(querySiteId, 10);
-        if(!basePool.includes(requested)){
-            // Requested site is either inactive/completed-not-included or not allowed for this user
-            return [];
-        }
+        if (!basePool.includes(requested)) return [];
         return [requested];
     }
-    return basePool;  
+    return basePool;
 }
 
-module.exports = {...actionController,resolveAllowedSiteIds};
+module.exports = { ...actionController, resolveAllowedSiteIds };

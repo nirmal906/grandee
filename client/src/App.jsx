@@ -15,6 +15,7 @@ import Material from './components/material';
 import MaterialEntry from './components/materialEntry';
 import Labour from './components/labour';
 import LabourEntry from './components/labourEntry';
+import ApproveLabourEntry from './components/approveLabourEntry';
 import Vendor from './components/vendor';
 function App(){
 	return(
@@ -107,12 +108,20 @@ function App(){
 								<Labour />
 							</ProtectedRoute>
 						} 
-					/>
+					/> 
 					<Route 
 						path="/labourentry" 
 						element={
 							<ProtectedRoute moduleName="labourentry">
 								<LabourEntry />
+							</ProtectedRoute>
+						} 
+					/>
+					<Route 
+						path="/approvelabourentry" 
+						element={
+							<ProtectedRoute moduleName="approvelabourentry">
+								<ApproveLabourEntry />
 							</ProtectedRoute>
 						} 
 					/>
