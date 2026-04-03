@@ -16,6 +16,9 @@ const materialEntryRoutes = require('./routes/materialEntry');
 const labourRoutes        = require('./routes/labour');
 const labourEntryRoutes   = require('./routes/labourEntry');
 const vendorRoutes        = require('./routes/vendor');
+const materialInvoiceRoutes = require('./routes/materialInvoice');
+const labourInvoiceRoutes   = require('./routes/labourInvoice');
+const vendorSummaryRoutes   = require('./routes/vendorSummary');
 
 const app = express();
 
@@ -42,6 +45,9 @@ app.use('/api/material-entry', materialEntryRoutes);
 app.use('/api/labour', labourRoutes);
 app.use('/api/labour-entry', labourEntryRoutes);
 app.use('/api/vendor', vendorRoutes);
+app.use('/api/material-invoice', materialInvoiceRoutes);
+app.use('/api/labour-invoice', labourInvoiceRoutes);
+app.use('/api/vendor-summary', vendorSummaryRoutes);
 
 app.use((req, res) => {
     res.status(404).json({

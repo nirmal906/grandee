@@ -84,6 +84,25 @@ const uploadMiddleware = {
         limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
     }).single('invoice_photo'),
 
+    // Material invoice upload (stores in uploads/material-invoices)
+    materialInvoiceUpload: multer({
+        storage: createStorage('material-invoices'),
+        fileFilter: (req, file, cb) => {
+            const allowedImageTypes = [
+                'image/jpeg',
+                'image/jpg',
+                'image/png',
+                'image/webp'
+            ];
+            if (allowedImageTypes.includes(file.mimetype)) {
+                cb(null, true);
+            } else {
+                cb(new Error('Only image files (JPG, PNG, WEBP) are allowed for invoice photo'), false);
+            }
+        },
+        limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+    }).single('invoice_photo'),
+
     // General image upload (stores in uploads/general)
     generalUpload: multer({
         storage: createStorage('general'),
