@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { LayoutDashboard, ChevronDown, ChevronRight, Target, Menu, ClipboardCheck, Settings, MapPin, Users, Package, Truck, UserCog, KeyRound, UsersRound, Ruler } from "lucide-react";
+import { LayoutDashboard, ChevronDown, ChevronRight, Target, Menu, ClipboardCheck, Settings, MapPin, Users, Package, Truck, UserCog, KeyRound, UsersRound, Ruler, FileText, BarChart3 } from "lucide-react";
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/themeContext';
 import { toast } from 'react-toastify';
@@ -188,6 +188,8 @@ function Layout({ children, selectedSite, siteName }) {
 				{ name: 'labour', icon: Users, label: 'Master', type: 'single' },
 				{ name: 'labourentry', icon: Users, label: 'Transactions', type: 'single' },
 				{ name: 'approvelabourentry', icon: ClipboardCheck, label: 'Approve Transaction', type: 'single' },
+				{ name: 'labourinvoice', icon: FileText, label: 'Invoices', type: 'single' },
+				{ name: 'approvelabourinvoice', icon: ClipboardCheck, label: 'Approve Invoice', type: 'single' },
 			]
 		},
 		{
@@ -197,9 +199,11 @@ function Layout({ children, selectedSite, siteName }) {
 			type: 'group',
 			children: [
 				{ name: 'material', icon: Package, label: 'Master', type: 'single' },
-				{ name: 'materialentry', icon: Package, label: 'Transactions', type: 'single' }
+				{ name: 'materialentry', icon: Package, label: 'Transactions', type: 'single' },
+				{ name: 'materialinvoice', icon: FileText, label: 'Invoices', type: 'single' },
 			]
 		},
+		{ name: 'vendorsummary', icon: BarChart3, label: 'Vendor Summary', type: 'single' },
 		{
 			name: 'settings',
 			icon: Settings,
@@ -214,22 +218,32 @@ function Layout({ children, selectedSite, siteName }) {
 		},
 	], []);
 
+	// Map new routes to existing permission modules
+	const permissionMap = useMemo(() => ({
+		materialinvoice: 'materialentry',
+		labourinvoice: 'labourentry',
+		approvelabourinvoice: 'approvelabourentry',
+		vendorsummary: 'vendor',
+	}), []);
+
 	// Fixed filteredMenu — dashboard also checks permissions
 	const filteredMenu = useMemo(() => {
 		return menuStructure.map(item => {
 			if (item.type === 'single') {
-				const perm = permissions[item.name];
+				const permKey = permissionMap[item.name] || item.name;
+				const perm = permissions[permKey];
 				return perm?.can_view ? item : null;
 			} else if (item.type === 'group') {
 				const visibleChildren = item.children.filter(child => {
-					const perm = permissions[child.name];
+					const permKey = permissionMap[child.name] || child.name;
+					const perm = permissions[permKey];
 					return perm?.can_view;
 				});
 				return visibleChildren.length > 0 ? { ...item, children: visibleChildren } : null;
 			}
 			return null;
 		}).filter(Boolean);
-	}, [menuStructure, permissions]);
+	}, [menuStructure, permissions, permissionMap]);
 
 	const isPathActive = useCallback((path) => {
 		const currentPath = location.pathname.substring(1) || 'dashboard';

@@ -17,6 +17,10 @@ import Labour from './components/labour';
 import LabourEntry from './components/labourEntry';
 import ApproveLabourEntry from './components/approveLabourEntry';
 import Vendor from './components/vendor';
+import MaterialInvoice from './components/materialInvoice';
+import LabourInvoice from './components/labourInvoice';
+import ApproveLabourInvoice from './components/approveLabourInvoice';
+import VendorSummary from './components/vendorSummary';
 function App(){
 	return(
 		<>
@@ -125,13 +129,45 @@ function App(){
 							</ProtectedRoute>
 						} 
 					/>
-					<Route 
-						path="/vendor" 
+					<Route
+						path="/vendor"
 						element={
 							<ProtectedRoute moduleName="vendor">
 								<Vendor />
 							</ProtectedRoute>
-						} 
+						}
+					/>
+					<Route
+						path="/materialinvoice"
+						element={
+							<ProtectedRoute moduleName="materialentry">
+								<MaterialInvoice />
+							</ProtectedRoute>
+						}
+					/>
+					<Route
+						path="/labourinvoice"
+						element={
+							<ProtectedRoute moduleName="labourentry">
+								<LabourInvoice />
+							</ProtectedRoute>
+						}
+					/>
+					<Route
+						path="/approvelabourinvoice"
+						element={
+							<ProtectedRoute moduleName="approvelabourentry">
+								<ApproveLabourInvoice />
+							</ProtectedRoute>
+						}
+					/>
+					<Route
+						path="/vendorsummary"
+						element={
+							<ProtectedRoute moduleName="vendor">
+								<VendorSummary />
+							</ProtectedRoute>
+						}
 					/>
 				</Routes>
 			</ThemeProvider>
