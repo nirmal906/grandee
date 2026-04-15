@@ -12,11 +12,12 @@ import Site from './components/site';
 import Team from './components/team';
 import Unit from './components/unit';
 import Material from './components/material';
-import MaterialEntry from './components/materialEntry';
 import Labour from './components/labour';
-import LabourEntry from './components/labourEntry';
-import ApproveLabourEntry from './components/approveLabourEntry';
 import Vendor from './components/vendor';
+import MaterialInvoice from './components/materialInvoice';
+import LabourInvoice from './components/labourInvoice';
+import ApproveLabourInvoice from './components/approveLabourInvoice';
+import VendorSummary from './components/vendorSummary';
 function App(){
 	return(
 		<>
@@ -93,45 +94,53 @@ function App(){
 							</ProtectedRoute>
 						} 
 					/> 
-					<Route 
-						path="/materialentry" 
-						element={
-							<ProtectedRoute moduleName="materialentry">
-								<MaterialEntry />
-							</ProtectedRoute>
-						} 
-					/> 
-					<Route 
-						path="/labour" 
+					<Route
+						path="/labour"
 						element={
 							<ProtectedRoute moduleName="labour">
 								<Labour />
 							</ProtectedRoute>
 						} 
 					/> 
-					<Route 
-						path="/labourentry" 
-						element={
-							<ProtectedRoute moduleName="labourentry">
-								<LabourEntry />
-							</ProtectedRoute>
-						} 
-					/>
-					<Route 
-						path="/approvelabourentry" 
-						element={
-							<ProtectedRoute moduleName="approvelabourentry">
-								<ApproveLabourEntry />
-							</ProtectedRoute>
-						} 
-					/>
-					<Route 
-						path="/vendor" 
+					<Route
+						path="/vendor"
 						element={
 							<ProtectedRoute moduleName="vendor">
 								<Vendor />
 							</ProtectedRoute>
-						} 
+						}
+					/>
+					<Route
+						path="/materialinvoice"
+						element={
+							<ProtectedRoute moduleName="materialinvoice">
+								<MaterialInvoice />
+							</ProtectedRoute>
+						}
+					/>
+					<Route
+						path="/labourinvoice"
+						element={
+							<ProtectedRoute moduleName="labourinvoice">
+								<LabourInvoice />
+							</ProtectedRoute>
+						}
+					/>
+					<Route
+						path="/approvelabourinvoice"
+						element={
+							<ProtectedRoute moduleName="approvelabourinvoice">
+								<ApproveLabourInvoice />
+							</ProtectedRoute>
+						}
+					/>
+					<Route
+						path="/vendorsummary"
+						element={
+							<ProtectedRoute moduleName="vendorsummary">
+								<VendorSummary />
+							</ProtectedRoute>
+						}
 					/>
 				</Routes>
 			</ThemeProvider>

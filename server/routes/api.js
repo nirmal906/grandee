@@ -22,8 +22,8 @@ router.get('/dashboard/labour-pending', authMiddleware, actionController.getLabo
 // SITE SUMMARY ROUTES
 router.get('/dashboard/site-summary', authMiddleware, actionController.getSiteSummary);
 router.get('/dashboard/payout-pending/:site_id', authMiddleware, actionController.getSitePayoutPending);
-router.patch('/material-entry/:entry_id/mark-paid', authMiddleware, actionController.markMaterialEntryPaid);
-router.patch('/labour-entry/:entry_id/mark-paid', authMiddleware, actionController.markLabourEntryPaid);
+router.patch('/material-invoice/:entry_id/mark-paid', authMiddleware, actionController.markMaterialEntryPaid);
+router.patch('/labour-invoice/:entry_id/mark-paid', authMiddleware, actionController.markLabourEntryPaid);
 
 
 // SEARCH POST OFFICES BY PINCODE

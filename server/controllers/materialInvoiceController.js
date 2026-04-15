@@ -1,22 +1,43 @@
-const { MaterialEntry, Material, Vendor, Site, User, MaterialEntryHistory } = require('../models');
+const { MaterialInvoice, MaterialInvoiceItem, MaterialInvoiceHistory, Material, Vendor, Site, User, Unit } = require('../models');
 const { Op } = require('sequelize');
 const path = require('path');
 const fs = require('fs');
 
 // Define upload directory path
-const UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'material-entries');
+const UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'material-invoices');
+
+// Helper function to create invoice snapshot
+const createInvoiceSnapshot = (invoice, items) => {
+    return JSON.stringify({
+        site_id: invoice.site_id,
+        vendor_id: invoice.vendor_id,
+        date: invoice.date,
+        invoice_number: invoice.invoice_number || null,
+        additional_charges: invoice.additional_charges,
+        debit_entry: invoice.debit_entry,
+        credit_entry: invoice.credit_entry,
+        invoice_photo: invoice.invoice_photo || null,
+        notes: invoice.notes || null,
+        status: invoice.status,
+        items: items.map(item => ({
+            material_id: item.material_id,
+            quantity: item.quantity,
+            rate: item.rate
+        }))
+    });
+};
 
 // Helper function to track changed fields
-const getChangedFields = (oldEntry, newData) => {
+const getChangedFields = (oldInvoice, newData) => {
     const changes = {};
     const fieldsToTrack = [
-        'site_id', 'material_id', 'vendor_id', 'date', 'quantity', 
-        'rate', 'additional_charges', 'debit_entry', 'credit_entry', 
-        'status', 'invoice_photo'
+        'site_id', 'vendor_id', 'date', 'invoice_number',
+        'additional_charges', 'debit_entry', 'credit_entry',
+        'status', 'invoice_photo', 'notes'
     ];
     fieldsToTrack.forEach(field => {
         if (newData[field] !== undefined) {
-            const oldValue = oldEntry[field];
+            const oldValue = oldInvoice[field];
             const newValue = newData[field];
             if (oldValue != newValue) { // Using != to handle type coercion
                 changes[field] = {
@@ -29,39 +50,16 @@ const getChangedFields = (oldEntry, newData) => {
     return Object.keys(changes).length > 0 ? JSON.stringify(changes) : null;
 };
 
-// Helper function to create history entry
-const createHistoryEntry = async (entryId, entryData, actionType, performedBy, changedFields = null, transaction) => {
-    await MaterialEntryHistory.create({
-        material_entry_id: entryId,
-        site_id: entryData.site_id,
-        material_id: entryData.material_id,
-        vendor_id: entryData.vendor_id || null,
-        date: entryData.date,
-        quantity: entryData.quantity,
-        rate: entryData.rate,
-        additional_charges: entryData.additional_charges || 0,
-        debit_entry: entryData.debit_entry || 0,
-        credit_entry: entryData.credit_entry || 0,
-        status: entryData.status,
-        invoice_photo: entryData.invoice_photo || null,
-        action_type: actionType,
-        changed_fields: changedFields,
-        performed_by: performedBy,
-        performed_at: new Date()
-    }, { transaction });
-};
+const materialInvoiceController = {
 
-const materialEntryController = {
-
-    // Get all material entries with pagination, search, filters
-    getMaterialEntries: async (req, res) => {
+    // Get all material invoices with pagination, search, filters
+    getMaterialInvoices: async (req, res) => {
         try {
             const {
                 page = 1,
                 limit = 10,
                 search = '',
                 status = '',
-                material_id = '',
                 vendor_id = '',
                 site_id = '',
                 date_from = '',
@@ -80,7 +78,7 @@ const materialEntryController = {
                 });
             }
 
-            const validSortFields = ['date', 'site_id', 'material_id', 'vendor_id', 'quantity', 'rate', 'additional_charges', 'created_at'];
+            const validSortFields = ['date', 'site_id', 'vendor_id', 'additional_charges', 'created_at', 'invoice_number'];
             const sortField = validSortFields.includes(sort) ? sort : 'date';
             const sortOrder = order.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
 
@@ -88,9 +86,6 @@ const materialEntryController = {
 
             if (status === '1' || status === '0') {
                 whereClause.status = Number(status);
-            }
-            if (material_id) {
-                whereClause.material_id = material_id;
             }
             if (vendor_id) {
                 whereClause.vendor_id = vendor_id;
@@ -103,8 +98,13 @@ const materialEntryController = {
                 if (date_from) whereClause.date[Op.gte] = new Date(date_from);
                 if (date_to) whereClause.date[Op.lte] = new Date(date_to);
             }
+            if (search) {
+                whereClause[Op.or] = [
+                    { invoice_number: { [Op.like]: `%${search}%` } }
+                ];
+            }
 
-            const { rows, count } = await MaterialEntry.findAndCountAll({
+            const { rows, count } = await MaterialInvoice.findAndCountAll({
                 where: whereClause,
                 order: [[sortField, sortOrder]],
                 limit: limitNum,
@@ -114,19 +114,6 @@ const materialEntryController = {
                         model: Site,
                         as: 'site',
                         attributes: ['id', 'name', 'full_address'],
-                        where: search ? { name: { [Op.like]: `%${search}%` } } : undefined,
-                        required: false
-                    },
-                    {
-                        model: Material,
-                        as: 'material',
-                        attributes: ['id', 'name', 'standard_rate', 'unit_id'],
-                        include: [{
-                            model: require('../models').Unit,
-                            as: 'unit',
-                            attributes: ['id', 'name']
-                        }],
-                        where: search ? { name: { [Op.like]: `%${search}%` } } : undefined,
                         required: false
                     },
                     {
@@ -144,6 +131,20 @@ const materialEntryController = {
                         model: User,
                         as: 'updater',
                         attributes: ['id', 'name', 'email']
+                    },
+                    {
+                        model: MaterialInvoiceItem,
+                        as: 'items',
+                        include: [{
+                            model: Material,
+                            as: 'material',
+                            attributes: ['id', 'name', 'standard_rate', 'unit_id'],
+                            include: [{
+                                model: Unit,
+                                as: 'unit',
+                                attributes: ['id', 'name']
+                            }]
+                        }]
                     }
                 ],
                 distinct: true
@@ -157,7 +158,7 @@ const materialEntryController = {
                 limit: limitNum
             });
         } catch (err) {
-            console.error('getMaterialEntries error:', err);
+            console.error('getMaterialInvoices error:', err);
             res.status(500).json({
                 success: false,
                 message: 'Something went wrong. Please try again later!'
@@ -165,44 +166,16 @@ const materialEntryController = {
         }
     },
 
-    // Get material entry history
-    getMaterialEntryHistory: async (req, res) => {
+    // Get single invoice by ID
+    getMaterialInvoiceById: async (req, res) => {
         try {
             const { id } = req.params;
-            const { page = 1, limit = 20 } = req.query;
-
-            const pageNum = parseInt(page, 10);
-            const limitNum = Math.min(parseInt(limit, 10), 100);
-
-            // Verify entry exists
-            const entry = await MaterialEntry.findByPk(id);
-            if (!entry) {
-                return res.status(404).json({
-                    success: false,
-                    message: 'Material entry not found'
-                });
-            }
-
-            const { rows, count } = await MaterialEntryHistory.findAndCountAll({
-                where: { material_entry_id: id },
-                order: [['performed_at', 'DESC']],
-                limit: limitNum,
-                offset: (pageNum - 1) * limitNum,
+            const invoice = await MaterialInvoice.findByPk(id, {
                 include: [
                     {
                         model: Site,
                         as: 'site',
-                        attributes: ['id', 'name']
-                    },
-                    {
-                        model: Material,
-                        as: 'material',
-                        attributes: ['id', 'name'],
-                        include: [{
-                            model: require('../models').Unit,
-                            as: 'unit',
-                            attributes: ['name']
-                        }]
+                        attributes: ['id', 'name', 'full_address']
                     },
                     {
                         model: Vendor,
@@ -212,102 +185,72 @@ const materialEntryController = {
                     },
                     {
                         model: User,
-                        as: 'performer',
+                        as: 'creator',
                         attributes: ['id', 'name', 'email']
+                    },
+                    {
+                        model: User,
+                        as: 'updater',
+                        attributes: ['id', 'name', 'email']
+                    },
+                    {
+                        model: MaterialInvoiceItem,
+                        as: 'items',
+                        include: [{
+                            model: Material,
+                            as: 'material',
+                            include: [{
+                                model: Unit,
+                                as: 'unit'
+                            }]
+                        }]
                     }
                 ]
             });
 
-            res.status(200).json({
-                success: true,
-                data: rows,
-                total: count,
-                page: pageNum,
-                limit: limitNum
-            });
-        } catch (err) {
-            console.error('getMaterialEntryHistory error:', err);
-            res.status(500).json({
-                success: false,
-                message: 'Failed to fetch material entry history'
-            });
-        }
-    },
-
-    // Get single entry by ID
-    getMaterialEntryById: async (req, res) => {
-        try {
-            const { id } = req.params;
-            const entry = await MaterialEntry.findByPk(id, {
-                include: [
-                    { 
-                        model: Site, 
-                        as: 'site', 
-                        attributes: ['id', 'name', 'full_address'] 
-                    },
-                    { 
-                        model: Material, 
-                        as: 'material', 
-                        include: [{ 
-                            model: require('../models').Unit, 
-                            as: 'unit' 
-                        }] 
-                    },
-                    { 
-                        model: Vendor, 
-                        as: 'vendor', 
-                        attributes: ['id', 'name'], 
-                        required: false 
-                    },
-                    { 
-                        model: User, 
-                        as: 'creator', 
-                        attributes: ['id', 'name', 'email'] 
-                    },
-                    { 
-                        model: User, 
-                        as: 'updater', 
-                        attributes: ['id', 'name', 'email'] 
-                    }
-                ]
-            });
-
-            if (!entry) {
+            if (!invoice) {
                 return res.status(404).json({
                     success: false,
-                    message: 'Material entry not found'
+                    message: 'Material invoice not found'
                 });
             }
 
             res.status(200).json({
                 success: true,
-                data: entry
+                data: invoice
             });
         } catch (err) {
-            console.error('getMaterialEntryById error:', err);
+            console.error('getMaterialInvoiceById error:', err);
             res.status(500).json({
                 success: false,
-                message: 'Failed to fetch material entry'
+                message: 'Failed to fetch material invoice'
             });
         }
     },
 
-    // Create material entry
-    createMaterialEntry: async (req, res) => {
-        const transaction = await MaterialEntry.sequelize.transaction();
+    // Create material invoice
+    createMaterialInvoice: async (req, res) => {
+        const transaction = await MaterialInvoice.sequelize.transaction();
         try {
             const {
                 site_id,
-                material_id,
                 vendor_id,
                 date,
-                quantity,
-                rate,
+                invoice_number,
                 additional_charges = 0,
                 debit_entry,
                 credit_entry,
+                notes,
                 status
             } = req.body;
+
+            // Parse items from JSON string
+            let items = [];
+            try {
+                items = JSON.parse(req.body.items);
+            } catch (e) {
+                items = [];
+            }
 
             const userId = req.user?.id;
             const errors = {};
@@ -324,20 +267,10 @@ const materialEntryController = {
                 }
             }
 
-            // Material validation
-            if (!material_id) {
-                errors.material_id = 'Material is required';
+            // Vendor validation
+            if (!vendor_id) {
+                errors.vendor_id = 'Vendor is required';
             } else {
-                const material = await Material.findByPk(material_id, { transaction });
-                if (!material) {
-                    errors.material_id = 'Selected material does not exist';
-                } else if (material.status === 0) {
-                    errors.material_id = 'Selected material is inactive';
-                }
-            }
-
-            // Vendor optional - only validate if provided
-            if (vendor_id !== undefined && vendor_id !== null && vendor_id !== '') {
                 const vendor = await Vendor.findByPk(vendor_id, { transaction });
                 if (!vendor) {
                     errors.vendor_id = 'Selected vendor does not exist';
@@ -350,30 +283,16 @@ const materialEntryController = {
             if (!date) {
                 errors.date = 'Date is required';
             } else {
-                const entryDate = new Date(date);
-                if (isNaN(entryDate.getTime())) {
+                const invoiceDate = new Date(date);
+                if (isNaN(invoiceDate.getTime())) {
                     errors.date = 'Invalid date format';
                 }
-            }
-
-            // Quantity validation
-            if (quantity === undefined || quantity === null || quantity === '') {
-                errors.quantity = 'Quantity is required';
-            } else if (isNaN(quantity) || Number(quantity) <= 0) {
-                errors.quantity = 'Quantity must be greater than 0';
-            }
-
-            // Rate validation
-            if (rate === undefined || rate === null || rate === '') {
-                errors.rate = 'Rate is required';
-            } else if (isNaN(rate) || Number(rate) < 0) {
-                errors.rate = 'Rate must be a positive number';
             }
 
             // Additional charges
             if (additional_charges !== undefined) {
                 if (isNaN(additional_charges) || Number(additional_charges) < 0) {
-                    errors.additional_charges = 'Additional charges must be ≥ 0';
+                    errors.additional_charges = 'Additional charges must be \u2265 0';
                 }
             }
 
@@ -400,6 +319,38 @@ const materialEntryController = {
                 errors.status = 'Status must be 0 or 1';
             }
 
+            // Items validation
+            if (!Array.isArray(items) || items.length === 0) {
+                errors.items = 'At least one item is required';
+            } else {
+                for (let i = 0; i < items.length; i++) {
+                    const item = items[i];
+
+                    if (!item.material_id) {
+                        errors[`items[${i}].material_id`] = 'Material is required';
+                    } else {
+                        const material = await Material.findByPk(item.material_id, { transaction });
+                        if (!material) {
+                            errors[`items[${i}].material_id`] = 'Selected material does not exist';
+                        } else if (material.status === 0) {
+                            errors[`items[${i}].material_id`] = 'Selected material is inactive';
+                        }
+                    }
+
+                    if (item.quantity === undefined || item.quantity === null || item.quantity === '') {
+                        errors[`items[${i}].quantity`] = 'Quantity is required';
+                    } else if (isNaN(item.quantity) || Number(item.quantity) <= 0) {
+                        errors[`items[${i}].quantity`] = 'Quantity must be greater than 0';
+                    }
+
+                    if (item.rate === undefined || item.rate === null || item.rate === '') {
+                        errors[`items[${i}].rate`] = 'Rate is required';
+                    } else if (isNaN(item.rate) || Number(item.rate) < 0) {
+                        errors[`items[${i}].rate`] = 'Rate must be a positive number';
+                    }
+                }
+            }
+
             // File handling
             let invoicePhotoFilename = null;
             if (req.file) {
@@ -407,13 +358,21 @@ const materialEntryController = {
             }
 
             // Total calculation validation
-            const totalAmount = calculateTotalAmount(quantity, rate, additional_charges);
+            let itemsTotal = 0;
+            if (Array.isArray(items) && items.length > 0) {
+                itemsTotal = items.reduce((sum, item) => {
+                    const qty = parseFloat(item.quantity) || 0;
+                    const r = parseFloat(item.rate) || 0;
+                    return sum + (qty * r);
+                }, 0);
+            }
+            const totalAmount = parseFloat((itemsTotal + (parseFloat(additional_charges) || 0)).toFixed(2));
             const debitAmount = Number(debit_entry || 0);
             const creditAmount = Number(credit_entry || 0);
             const sum = parseFloat((debitAmount + creditAmount).toFixed(2));
 
             if (Math.abs(sum - totalAmount) > 0.01) {
-                errors.debit_entry = `Total Amount (₹${totalAmount.toFixed(2)}) must equal Debit + Credit (₹${sum.toFixed(2)})`;
+                errors.debit_entry = `Total Amount (\u20B9${totalAmount.toFixed(2)}) must equal Debit + Credit (\u20B9${sum.toFixed(2)})`;
             }
 
             if (Object.keys(errors).length > 0) {
@@ -429,39 +388,49 @@ const materialEntryController = {
                 });
             }
 
-            const entryData = {
+            const invoiceData = {
                 site_id,
-                material_id,
-                vendor_id: vendor_id || null,
+                vendor_id,
                 date: new Date(date),
-                quantity: Number(quantity),
-                rate: Number(rate).toFixed(2),
+                invoice_number: invoice_number || null,
                 additional_charges: Number(additional_charges || 0).toFixed(2),
                 debit_entry: debit_entry ? Number(debit_entry).toFixed(2) : 0.00,
                 credit_entry: credit_entry ? Number(credit_entry).toFixed(2) : 0.00,
-                status: status !== undefined ? Number(status) : 1,
                 invoice_photo: invoicePhotoFilename,
+                notes: notes || null,
+                status: status !== undefined ? Number(status) : 1,
                 created_by: userId,
                 updated_by: userId,
             };
 
-            const newEntry = await MaterialEntry.create(entryData, { transaction });
+            const newInvoice = await MaterialInvoice.create(invoiceData, { transaction });
 
-            // Create history entry for creation
-            await createHistoryEntry(
-                newEntry.id,
-                entryData,
-                'created',
-                userId,
-                null,
-                transaction
-            );
+            // Create invoice items
+            const itemsData = items.map(item => ({
+                invoice_id: newInvoice.id,
+                material_id: item.material_id,
+                quantity: Number(item.quantity),
+                rate: Number(item.rate).toFixed(2)
+            }));
+
+            await MaterialInvoiceItem.bulkCreate(itemsData, { transaction });
+
+            // Create history entry
+            const snapshot = createInvoiceSnapshot(invoiceData, items);
+            await MaterialInvoiceHistory.create({
+                invoice_id: newInvoice.id,
+                action_type: 'created',
+                snapshot,
+                changed_fields: null,
+                performed_by: userId,
+                performed_at: new Date()
+            }, { transaction });
 
             await transaction.commit();
 
             res.status(201).json({
                 success: true,
-                message: 'Material entry created successfully'
+                message: 'Material invoice created successfully'
             });
         } catch (err) {
             if (req.file) {
@@ -469,7 +438,7 @@ const materialEntryController = {
                 if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
             }
             await transaction.rollback();
-            console.error('createMaterialEntry error:', err);
+            console.error('createMaterialInvoice error:', err);
             res.status(500).json({
                 success: false,
                 message: 'Something went wrong. Please try again later!',
@@ -477,29 +446,42 @@ const materialEntryController = {
         }
     },
 
-    // Update material entry
-    updateMaterialEntry: async (req, res) => {
-        const transaction = await MaterialEntry.sequelize.transaction();
+    // Update material invoice
+    updateMaterialInvoice: async (req, res) => {
+        const transaction = await MaterialInvoice.sequelize.transaction();
         try {
             const { id } = req.params;
             const {
                 site_id,
-                material_id,
                 vendor_id,
                 date,
-                quantity,
-                rate,
+                invoice_number,
                 additional_charges,
                 debit_entry,
                 credit_entry,
+                notes,
                 status,
                 invoiceRemoved
             } = req.body;
+
+            // Parse items from JSON string if provided
+            let items = undefined;
+            if (req.body.items !== undefined) {
+                try {
+                    items = JSON.parse(req.body.items);
+                } catch (e) {
+                    items = [];
+                }
+            }
+
             const userId = req.user?.id;
-            const entry = await MaterialEntry.findByPk(id, { transaction });
-            
-            if (!entry) {
-                // Clean up uploaded file if entry not found
+            const invoice = await MaterialInvoice.findByPk(id, {
+                include: [{ model: MaterialInvoiceItem, as: 'items' }],
+                transaction
+            });
+
+            if (!invoice) {
+                // Clean up uploaded file if invoice not found
                 if (req.file) {
                     const filePath = path.join(UPLOAD_DIR, req.file.filename);
                     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
@@ -507,12 +489,11 @@ const materialEntryController = {
                 await transaction.rollback();
                 return res.status(404).json({
                     success: false,
-                    message: 'Material entry not found'
+                    message: 'Material invoice not found'
                 });
             }
-            
-            const errors = {};
 
+            const errors = {};
 
             // Site validation
             if (site_id !== undefined) {
@@ -528,20 +509,11 @@ const materialEntryController = {
                 }
             }
 
-            // Material validation
-            if (material_id !== undefined) {
-                if (!material_id) {
-                    errors.material_id = 'Material cannot be empty';
-                } else {
-                    const material = await Material.findByPk(material_id, { transaction });
-                    if (!material) errors.material_id = 'Selected material does not exist';
-                    else if (material.status === 0) errors.material_id = 'Selected material is inactive';
-                }
-            }
-
             // Vendor validation
             if (vendor_id !== undefined) {
-                if (vendor_id !== null && vendor_id !== '') {
+                if (!vendor_id) {
+                    errors.vendor_id = 'Vendor cannot be empty';
+                } else {
                     const vendor = await Vendor.findByPk(vendor_id, { transaction });
                     if (!vendor) {
                         errors.vendor_id = 'Selected vendor does not exist';
@@ -561,24 +533,10 @@ const materialEntryController = {
                 }
             }
 
-            // Quantity validation
-            if (quantity !== undefined) {
-                if (quantity === null || quantity === '' || isNaN(quantity) || Number(quantity) <= 0) {
-                    errors.quantity = 'Quantity must be greater than 0';
-                }
-            }
-
-            // Rate validation
-            if (rate !== undefined) {
-                if (rate === null || rate === '' || isNaN(rate) || Number(rate) < 0) {
-                    errors.rate = 'Rate must be a positive number';
-                }
-            }
-
             // Additional charges validation
             if (additional_charges !== undefined) {
                 if (isNaN(additional_charges) || Number(additional_charges) < 0) {
-                    errors.additional_charges = 'Additional charges must be ≥ 0';
+                    errors.additional_charges = 'Additional charges must be \u2265 0';
                 }
             }
 
@@ -605,12 +563,47 @@ const materialEntryController = {
                 errors.status = 'Status must be 0 or 1';
             }
 
-            let newInvoicePhoto = entry.invoice_photo;
-    
+            // Items validation (if provided)
+            if (items !== undefined) {
+                if (!Array.isArray(items) || items.length === 0) {
+                    errors.items = 'At least one item is required';
+                } else {
+                    for (let i = 0; i < items.length; i++) {
+                        const item = items[i];
+
+                        if (!item.material_id) {
+                            errors[`items[${i}].material_id`] = 'Material is required';
+                        } else {
+                            const material = await Material.findByPk(item.material_id, { transaction });
+                            if (!material) {
+                                errors[`items[${i}].material_id`] = 'Selected material does not exist';
+                            } else if (material.status === 0) {
+                                errors[`items[${i}].material_id`] = 'Selected material is inactive';
+                            }
+                        }
+
+                        if (item.quantity === undefined || item.quantity === null || item.quantity === '') {
+                            errors[`items[${i}].quantity`] = 'Quantity is required';
+                        } else if (isNaN(item.quantity) || Number(item.quantity) <= 0) {
+                            errors[`items[${i}].quantity`] = 'Quantity must be greater than 0';
+                        }
+
+                        if (item.rate === undefined || item.rate === null || item.rate === '') {
+                            errors[`items[${i}].rate`] = 'Rate is required';
+                        } else if (isNaN(item.rate) || Number(item.rate) < 0) {
+                            errors[`items[${i}].rate`] = 'Rate must be a positive number';
+                        }
+                    }
+                }
+            }
+
+            // File handling
+            let newInvoicePhoto = invoice.invoice_photo;
+
             // Handle file replacement
             if (req.file) {
-                if (entry.invoice_photo) {
-                    const oldPath = path.join(UPLOAD_DIR, entry.invoice_photo);
+                if (invoice.invoice_photo) {
+                    const oldPath = path.join(UPLOAD_DIR, invoice.invoice_photo);
                     if (fs.existsSync(oldPath)) {
                         fs.unlinkSync(oldPath);
                     }
@@ -618,8 +611,8 @@ const materialEntryController = {
                 newInvoicePhoto = req.file.filename;
             }
             // Handle explicit removal
-            else if (invoiceRemoved === 'true' && entry.invoice_photo) {
-                const oldPath = path.join(UPLOAD_DIR, entry.invoice_photo);
+            else if (invoiceRemoved === 'true' && invoice.invoice_photo) {
+                const oldPath = path.join(UPLOAD_DIR, invoice.invoice_photo);
                 if (fs.existsSync(oldPath)) {
                     fs.unlinkSync(oldPath);
                 }
@@ -627,16 +620,32 @@ const materialEntryController = {
             }
 
             // Total calculation validation for update
-            const finalQuantity = quantity !== undefined ? Number(quantity) : Number(entry.quantity);
-            const finalRate = rate !== undefined ? Number(rate) : Number(entry.rate);
-            const finalCharges = additional_charges !== undefined ? Number(additional_charges) : Number(entry.additional_charges);
-            const totalAmount = calculateTotalAmount(finalQuantity, finalRate, finalCharges);
-            const finalDebit = debit_entry !== undefined ? (debit_entry ? Number(debit_entry) : 0) : Number(entry.debit_entry);
-            const finalCredit = credit_entry !== undefined ? (credit_entry ? Number(credit_entry) : 0) : Number(entry.credit_entry);
+            const finalCharges = additional_charges !== undefined ? Number(additional_charges) : Number(invoice.additional_charges);
+            let finalItemsTotal = 0;
+
+            if (items !== undefined) {
+                // Use new items for calculation
+                finalItemsTotal = items.reduce((sum, item) => {
+                    const qty = parseFloat(item.quantity) || 0;
+                    const r = parseFloat(item.rate) || 0;
+                    return sum + (qty * r);
+                }, 0);
+            } else {
+                // Use existing items for calculation
+                finalItemsTotal = invoice.items.reduce((sum, item) => {
+                    const qty = parseFloat(item.quantity) || 0;
+                    const r = parseFloat(item.rate) || 0;
+                    return sum + (qty * r);
+                }, 0);
+            }
+
+            const totalAmount = parseFloat((finalItemsTotal + finalCharges).toFixed(2));
+            const finalDebit = debit_entry !== undefined ? (debit_entry ? Number(debit_entry) : 0) : Number(invoice.debit_entry);
+            const finalCredit = credit_entry !== undefined ? (credit_entry ? Number(credit_entry) : 0) : Number(invoice.credit_entry);
             const sum = parseFloat((finalDebit + finalCredit).toFixed(2));
 
             if (Math.abs(sum - totalAmount) > 0.01) {
-                errors.debit_entry = `Total Amount (₹${totalAmount.toFixed(2)}) must equal Debit + Credit (₹${sum.toFixed(2)})`;
+                errors.debit_entry = `Total Amount (\u20B9${totalAmount.toFixed(2)}) must equal Debit + Credit (\u20B9${sum.toFixed(2)})`;
             }
 
             if (Object.keys(errors).length > 0) {
@@ -652,57 +661,77 @@ const materialEntryController = {
                 });
             }
 
-            const updateData = { 
-                updated_by: userId, 
+            const updateData = {
+                updated_by: userId,
                 updated_at: new Date(),
-                invoice_photo: newInvoicePhoto 
-            };
-
-            if (site_id !== undefined) updateData.site_id = site_id;
-            if (material_id !== undefined) updateData.material_id = material_id;
-            if (vendor_id !== undefined) updateData.vendor_id = vendor_id || null;
-            if (date !== undefined) updateData.date = new Date(date);
-            if (quantity !== undefined) updateData.quantity = Number(quantity);
-            if (rate !== undefined) updateData.rate = Number(rate).toFixed(2);
-            if (additional_charges !== undefined) updateData.additional_charges = Number(additional_charges || 0).toFixed(2);
-            if (debit_entry !== undefined) updateData.debit_entry = debit_entry ? Number(debit_entry).toFixed(2) : 0.00;
-            if (credit_entry !== undefined) updateData.credit_entry = credit_entry ? Number(credit_entry).toFixed(2) : 0.00;
-            if (status !== undefined) updateData.status = Number(status);
-
-            // Track changed fields
-            const changedFields = getChangedFields(entry, updateData);
-
-            await entry.update(updateData, { transaction });
-
-            // Create history entry for update
-            const historyData = {
-                site_id: updateData.site_id !== undefined ? updateData.site_id : entry.site_id,
-                material_id: updateData.material_id !== undefined ? updateData.material_id : entry.material_id,
-                vendor_id: updateData.vendor_id !== undefined ? updateData.vendor_id : entry.vendor_id,
-                date: updateData.date !== undefined ? updateData.date : entry.date,
-                quantity: updateData.quantity !== undefined ? updateData.quantity : entry.quantity,
-                rate: updateData.rate !== undefined ? updateData.rate : entry.rate,
-                additional_charges: updateData.additional_charges !== undefined ? updateData.additional_charges : entry.additional_charges,
-                debit_entry: updateData.debit_entry !== undefined ? updateData.debit_entry : entry.debit_entry,
-                credit_entry: updateData.credit_entry !== undefined ? updateData.credit_entry : entry.credit_entry,
-                status: updateData.status !== undefined ? updateData.status : entry.status,
                 invoice_photo: newInvoicePhoto
             };
 
-            await createHistoryEntry(
-                entry.id,
-                historyData,
-                'updated',
-                userId,
-                changedFields,
-                transaction
-            );
+            if (site_id !== undefined) updateData.site_id = site_id;
+            if (vendor_id !== undefined) updateData.vendor_id = vendor_id;
+            if (date !== undefined) updateData.date = new Date(date);
+            if (invoice_number !== undefined) updateData.invoice_number = invoice_number || null;
+            if (additional_charges !== undefined) updateData.additional_charges = Number(additional_charges || 0).toFixed(2);
+            if (debit_entry !== undefined) updateData.debit_entry = debit_entry ? Number(debit_entry).toFixed(2) : 0.00;
+            if (credit_entry !== undefined) updateData.credit_entry = credit_entry ? Number(credit_entry).toFixed(2) : 0.00;
+            if (notes !== undefined) updateData.notes = notes || null;
+            if (status !== undefined) updateData.status = Number(status);
+
+            // Track changed fields
+            const changedFields = getChangedFields(invoice, updateData);
+
+            await invoice.update(updateData, { transaction });
+
+            // Handle items replacement if provided
+            let finalItems = invoice.items;
+            if (items !== undefined) {
+                // Delete old items
+                await MaterialInvoiceItem.destroy({
+                    where: { invoice_id: id },
+                    transaction
+                });
+
+                // Create new items
+                const itemsData = items.map(item => ({
+                    invoice_id: invoice.id,
+                    material_id: item.material_id,
+                    quantity: Number(item.quantity),
+                    rate: Number(item.rate).toFixed(2)
+                }));
+
+                await MaterialInvoiceItem.bulkCreate(itemsData, { transaction });
+                finalItems = items;
+            }
+
+            // Create history entry for update
+            const historyData = {
+                site_id: updateData.site_id !== undefined ? updateData.site_id : invoice.site_id,
+                vendor_id: updateData.vendor_id !== undefined ? updateData.vendor_id : invoice.vendor_id,
+                date: updateData.date !== undefined ? updateData.date : invoice.date,
+                invoice_number: updateData.invoice_number !== undefined ? updateData.invoice_number : invoice.invoice_number,
+                additional_charges: updateData.additional_charges !== undefined ? updateData.additional_charges : invoice.additional_charges,
+                debit_entry: updateData.debit_entry !== undefined ? updateData.debit_entry : invoice.debit_entry,
+                credit_entry: updateData.credit_entry !== undefined ? updateData.credit_entry : invoice.credit_entry,
+                notes: updateData.notes !== undefined ? updateData.notes : invoice.notes,
+                status: updateData.status !== undefined ? updateData.status : invoice.status,
+                invoice_photo: newInvoicePhoto
+            };
+
+            const snapshot = createInvoiceSnapshot(historyData, finalItems);
+            await MaterialInvoiceHistory.create({
+                invoice_id: invoice.id,
+                action_type: 'updated',
+                snapshot,
+                changed_fields: changedFields,
+                performed_by: userId,
+                performed_at: new Date()
+            }, { transaction });
 
             await transaction.commit();
 
             res.status(200).json({
                 success: true,
-                message: 'Material entry updated successfully'
+                message: 'Material invoice updated successfully'
             });
         } catch (err) {
             if (req.file) {
@@ -710,7 +739,7 @@ const materialEntryController = {
                 if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
             }
             await transaction.rollback();
-            console.error('updateMaterialEntry error:', err);
+            console.error('updateMaterialInvoice error:', err);
             res.status(500).json({
                 success: false,
                 message: 'Something went wrong. Please try again later!',
@@ -718,42 +747,90 @@ const materialEntryController = {
         }
     },
 
-    // Delete entry
-    deleteMaterialEntry: async (req, res) => {
-        const transaction = await MaterialEntry.sequelize.transaction();
+    // Delete invoice
+    deleteMaterialInvoice: async (req, res) => {
+        const transaction = await MaterialInvoice.sequelize.transaction();
         try {
             const { id } = req.params;
-            const entry = await MaterialEntry.findByPk(id, { transaction });
-            
-            if (!entry) {
+            const invoice = await MaterialInvoice.findByPk(id, { transaction });
+
+            if (!invoice) {
                 await transaction.rollback();
                 return res.status(404).json({
                     success: false,
-                    message: 'Material entry not found'
+                    message: 'Material invoice not found'
                 });
             }
 
             // Delete associated invoice photo if exists
-            if (entry.invoice_photo) {
-                const filePath = path.join(UPLOAD_DIR, entry.invoice_photo);
+            if (invoice.invoice_photo) {
+                const filePath = path.join(UPLOAD_DIR, invoice.invoice_photo);
                 if (fs.existsSync(filePath)) {
                     fs.unlinkSync(filePath);
                 }
             }
-            
-            await entry.destroy({ transaction });
+
+            await invoice.destroy({ transaction });
             await transaction.commit();
-            
+
             res.status(200).json({
                 success: true,
-                message: 'Material entry deleted successfully'
+                message: 'Material invoice deleted successfully'
             });
         } catch (err) {
             await transaction.rollback();
-            console.error('deleteMaterialEntry error:', err);
+            console.error('deleteMaterialInvoice error:', err);
             res.status(500).json({
                 success: false,
-                message: 'Failed to delete material entry'
+                message: 'Failed to delete material invoice'
+            });
+        }
+    },
+
+    // Get material invoice history
+    getMaterialInvoiceHistory: async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { page = 1, limit = 20 } = req.query;
+
+            const pageNum = parseInt(page, 10);
+            const limitNum = Math.min(parseInt(limit, 10), 100);
+
+            // Verify invoice exists
+            const invoice = await MaterialInvoice.findByPk(id);
+            if (!invoice) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Material invoice not found'
+                });
+            }
+
+            const { rows, count } = await MaterialInvoiceHistory.findAndCountAll({
+                where: { invoice_id: id },
+                order: [['performed_at', 'DESC']],
+                limit: limitNum,
+                offset: (pageNum - 1) * limitNum,
+                include: [
+                    {
+                        model: User,
+                        as: 'performer',
+                        attributes: ['id', 'name', 'email']
+                    }
+                ]
+            });
+
+            res.status(200).json({
+                success: true,
+                data: rows,
+                total: count,
+                page: pageNum,
+                limit: limitNum
+            });
+        } catch (err) {
+            console.error('getMaterialInvoiceHistory error:', err);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to fetch material invoice history'
             });
         }
     },
@@ -765,7 +842,7 @@ const materialEntryController = {
                 where: { status: 1 },
                 attributes: ['id', 'name', 'standard_rate'],
                 include: [{
-                    model: require('../models').Unit,
+                    model: Unit,
                     as: 'unit',
                     attributes: ['name']
                 }],
@@ -827,12 +904,4 @@ const materialEntryController = {
     }
 };
 
-// Helper Function
-const calculateTotalAmount = (quantity, rate, additional_charges) => {
-    const qty = parseFloat(quantity) || 0;
-    const r = parseFloat(rate) || 0;
-    const charges = parseFloat(additional_charges) || 0;
-    return qty * r + charges;
-};
-
-module.exports = materialEntryController;
+module.exports = materialInvoiceController;

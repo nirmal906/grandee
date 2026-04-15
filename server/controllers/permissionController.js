@@ -8,11 +8,12 @@ const MODULES = [
     { name: 'team', label: 'Team' },
     { name: 'unit', label: 'Unit' },
     { name: 'material', label: 'Material Master' },
-    { name: 'materialentry', label: 'Material Transactions' },
+    { name: 'materialinvoice', label: 'Material Invoices' },
     { name: 'labour', label: 'Labour Master' },
-    { name: 'labourentry', label: 'Labour Transactions' },
-    { name: 'approvelabourentry', label: 'Approve Labour Transactions' },
+    { name: 'labourinvoice', label: 'Labour Invoices' },
+    { name: 'approvelabourinvoice', label: 'Approve Labour Invoices' },
     { name: 'vendor', label: 'Vendor' },
+    { name: 'vendorsummary', label: 'Vendor Summary' },
 ];
 const permissionController = {
 

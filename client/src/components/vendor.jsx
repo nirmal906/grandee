@@ -77,7 +77,7 @@ function Vendor(){
 	// Fetch material entries
     const fetchActiveMaterials = async () => {
         try{
-            const response = await axios.get(`/api/material-entry/active-materials`)
+            const response = await axios.get(`/api/material-invoice/active-materials`)
             if(response.data.success){
                 setMaterials(response.data.data)
             }

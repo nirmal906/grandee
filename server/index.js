@@ -12,10 +12,11 @@ const sitePaymentRoutes   = require('./routes/sitePayment');
 const teamRoutes          = require('./routes/team');
 const unitRoutes          = require('./routes/unit');
 const materialRoutes      = require('./routes/material');
-const materialEntryRoutes = require('./routes/materialEntry');
 const labourRoutes        = require('./routes/labour');
-const labourEntryRoutes   = require('./routes/labourEntry');
 const vendorRoutes        = require('./routes/vendor');
+const materialInvoiceRoutes = require('./routes/materialInvoice');
+const labourInvoiceRoutes   = require('./routes/labourInvoice');
+const vendorSummaryRoutes   = require('./routes/vendorSummary');
 
 const app = express();
 
@@ -38,10 +39,11 @@ app.use('/api/site-payment', sitePaymentRoutes);
 app.use('/api/team', teamRoutes);
 app.use('/api/unit', unitRoutes);
 app.use('/api/material', materialRoutes);
-app.use('/api/material-entry', materialEntryRoutes);
 app.use('/api/labour', labourRoutes);
-app.use('/api/labour-entry', labourEntryRoutes);
 app.use('/api/vendor', vendorRoutes);
+app.use('/api/material-invoice', materialInvoiceRoutes);
+app.use('/api/labour-invoice', labourInvoiceRoutes);
+app.use('/api/vendor-summary', vendorSummaryRoutes);
 
 app.use((req, res) => {
     res.status(404).json({
@@ -55,7 +57,7 @@ const startServer = async () => {
     try{
         await sequelize.authenticate();
         console.log('✅ Database connected');
-        await sequelize.sync(); // { alter : true }
+        await sequelize.sync({ alter : true }); // { alter : true }
         const port = process.env.PORT || 5000;
         app.listen(port, '0.0.0.0', () => {
             console.log(`✅ Server running on port ${port}`);

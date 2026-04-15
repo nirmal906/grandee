@@ -8,11 +8,13 @@ const Site                  = require('./siteModel');
 const SitePayment           = require('./sitePaymentModel');
 const Unit                  = require('./unitModel');
 const Material              = require('./materialModel');
-const MaterialEntry         = require('./materialEntryModel');
-const MaterialEntryHistory  = require('./materialEntryHistoryModel');
 const Labour                = require('./labourModel');
-const LabourEntry           = require('./labourEntryModel');
 const Vendor                = require('./vendorModel');
+const MaterialInvoice       = require('./materialInvoiceModel');
+const MaterialInvoiceItem   = require('./materialInvoiceItemModel');
+const MaterialInvoiceHistory = require('./materialInvoiceHistoryModel');
+const LabourInvoice         = require('./labourInvoiceModel');
+const LabourInvoiceItem     = require('./labourInvoiceItemModel');
 
 // USER-ROLE MANY-TO-MANY ASSOCIATIONS 
 User.belongsToMany(Role, {
@@ -269,115 +271,6 @@ User.hasMany(Material, {
     as: 'updatedMaterials'
 });
 
-// MATERIAL ENTRY - MATERIAL ASSOCIATIONS
-MaterialEntry.belongsTo(Material, { 
-    foreignKey: 'material_id', 
-    as: 'material' 
-});
-
-Material.hasMany(MaterialEntry, { 
-    foreignKey: 'material_id', 
-    as: 'materialEntries' 
-});
-
-// MATERIAL ENTRY - SITE ASSOCIATIONS
-MaterialEntry.belongsTo(Site, {
-    foreignKey: 'site_id',
-    as: 'site'
-});
-
-Site.hasMany(MaterialEntry, {
-    foreignKey: 'site_id',
-    as: 'materialEntries'
-});
-
-// MATERIAL ENTRY - VENDOR ASSOCIATIONS
-MaterialEntry.belongsTo(Vendor, { 
-    foreignKey: 'vendor_id', 
-    as: 'vendor' 
-});
-
-Vendor.hasMany(MaterialEntry, { 
-    foreignKey: 'vendor_id', 
-    as: 'materialEntries' 
-});
-
-// MATERIAL ENTRY AUDIT FIELDS
-MaterialEntry.belongsTo(User, { 
-    foreignKey: 'created_by', 
-    as: 'creator' 
-});
-
-User.hasMany(MaterialEntry, { 
-    foreignKey: 'created_by', 
-    as: 'createdMaterialEntries' 
-});
-
-MaterialEntry.belongsTo(User, { 
-    foreignKey: 'updated_by', 
-    as: 'updater' 
-});
-
-User.hasMany(MaterialEntry, { 
-    foreignKey: 'updated_by', 
-    as: 'updatedMaterialEntries' 
-});
-
-// MATERIAL ENTRY HISTORY - MATERIAL ENTRY ASSOCIATIONS
-MaterialEntryHistory.belongsTo(MaterialEntry, {
-    foreignKey: 'material_entry_id',
-    as: 'materialEntry'
-});
-
-MaterialEntry.hasMany(MaterialEntryHistory, {
-    foreignKey: 'material_entry_id',
-    as: 'history'
-});
-
-// MATERIAL ENTRY HISTORY - SITE ASSOCIATIONS
-MaterialEntryHistory.belongsTo(Site, {
-    foreignKey: 'site_id',
-    as: 'site'
-});
-
-Site.hasMany(MaterialEntryHistory, {
-    foreignKey: 'site_id',
-    as: 'materialEntryHistory'
-});
-
-// MATERIAL ENTRY HISTORY - MATERIAL ASSOCIATIONS
-MaterialEntryHistory.belongsTo(Material, {
-    foreignKey: 'material_id',
-    as: 'material'
-});
-
-Material.hasMany(MaterialEntryHistory, {
-    foreignKey: 'material_id',
-    as: 'materialEntryHistory'
-});
-
-// MATERIAL ENTRY HISTORY - VENDOR ASSOCIATIONS
-MaterialEntryHistory.belongsTo(Vendor, {
-    foreignKey: 'vendor_id',
-    as: 'vendor'
-});
-
-Vendor.hasMany(MaterialEntryHistory, {
-    foreignKey: 'vendor_id',
-    as: 'materialEntryHistory'
-});
-
-// MATERIAL ENTRY HISTORY - USER (PERFORMER) ASSOCIATIONS
-MaterialEntryHistory.belongsTo(User, {
-    foreignKey: 'performed_by',
-    as: 'performer'
-});
-
-User.hasMany(MaterialEntryHistory, {
-    foreignKey: 'performed_by',
-    as: 'performedMaterialEntryHistory'
-});
-
 // LABOUR AUDIT FIELDS
 Labour.belongsTo(User, {
     foreignKey: 'created_by',
@@ -397,60 +290,6 @@ Labour.belongsTo(User, {
 User.hasMany(Labour, {
     foreignKey: 'updated_by',
     as: 'updatedLabours'
-});
-
-// LABOUR ENTRY - SITE ASSOCIATIONS
-LabourEntry.belongsTo(Site, {
-    foreignKey: 'site_id',
-    as: 'site'
-});
-
-Site.hasMany(LabourEntry, {
-    foreignKey: 'site_id',
-    as: 'labourEntries'
-});
-
-// LABOUR ENTRY - LABOUR ASSOCIATIONS
-LabourEntry.belongsTo(Labour, {
-    foreignKey: 'labour_id',
-    as: 'labour'
-});
-
-Labour.hasMany(LabourEntry, {
-    foreignKey: 'labour_id',
-    as: 'labourEntries'
-});
-
-// LABOUR ENTRY - VENDOR ASSOCIATIONS
-LabourEntry.belongsTo(Vendor, {
-    foreignKey: 'vendor_id',
-    as: 'vendor'
-});
-
-Vendor.hasMany(LabourEntry, {
-    foreignKey: 'vendor_id',
-    as: 'vendorLabourEntries'  
-});
-
-// LABOUR ENTRY AUDIT FIELDS
-LabourEntry.belongsTo(User, {
-    foreignKey: 'created_by',
-    as: 'creator'
-});
-
-User.hasMany(LabourEntry, {
-    foreignKey: 'created_by',
-    as: 'createdLabourEntries'
-});
-
-LabourEntry.belongsTo(User, {
-    foreignKey: 'updated_by',
-    as: 'updater'
-});
-
-User.hasMany(LabourEntry, {
-    foreignKey: 'updated_by',
-    as: 'updatedLabourEntries'
 });
 
 // VENDOR AUDIT FIELDS
@@ -474,6 +313,56 @@ User.hasMany(Vendor, {
     as: 'updatedVendors'
 });
 
+// MATERIAL INVOICE - SITE ASSOCIATIONS
+MaterialInvoice.belongsTo(Site, { foreignKey: 'site_id', as: 'site' });
+Site.hasMany(MaterialInvoice, { foreignKey: 'site_id', as: 'materialInvoices' });
+
+// MATERIAL INVOICE - VENDOR ASSOCIATIONS
+MaterialInvoice.belongsTo(Vendor, { foreignKey: 'vendor_id', as: 'vendor' });
+Vendor.hasMany(MaterialInvoice, { foreignKey: 'vendor_id', as: 'materialInvoices' });
+
+// MATERIAL INVOICE AUDIT FIELDS
+MaterialInvoice.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
+User.hasMany(MaterialInvoice, { foreignKey: 'created_by', as: 'createdMaterialInvoices' });
+MaterialInvoice.belongsTo(User, { foreignKey: 'updated_by', as: 'updater' });
+User.hasMany(MaterialInvoice, { foreignKey: 'updated_by', as: 'updatedMaterialInvoices' });
+
+// MATERIAL INVOICE - ITEMS ASSOCIATIONS
+MaterialInvoice.hasMany(MaterialInvoiceItem, { foreignKey: 'invoice_id', as: 'items', onDelete: 'CASCADE' });
+MaterialInvoiceItem.belongsTo(MaterialInvoice, { foreignKey: 'invoice_id', as: 'invoice' });
+
+// MATERIAL INVOICE ITEM - MATERIAL ASSOCIATIONS
+MaterialInvoiceItem.belongsTo(Material, { foreignKey: 'material_id', as: 'material' });
+Material.hasMany(MaterialInvoiceItem, { foreignKey: 'material_id', as: 'materialInvoiceItems' });
+
+// MATERIAL INVOICE HISTORY ASSOCIATIONS
+MaterialInvoiceHistory.belongsTo(MaterialInvoice, { foreignKey: 'invoice_id', as: 'invoice' });
+MaterialInvoice.hasMany(MaterialInvoiceHistory, { foreignKey: 'invoice_id', as: 'history' });
+MaterialInvoiceHistory.belongsTo(User, { foreignKey: 'performed_by', as: 'performer' });
+User.hasMany(MaterialInvoiceHistory, { foreignKey: 'performed_by', as: 'performedMaterialInvoiceHistory' });
+
+// LABOUR INVOICE - SITE ASSOCIATIONS
+LabourInvoice.belongsTo(Site, { foreignKey: 'site_id', as: 'site' });
+Site.hasMany(LabourInvoice, { foreignKey: 'site_id', as: 'labourInvoices' });
+
+// LABOUR INVOICE - VENDOR ASSOCIATIONS
+LabourInvoice.belongsTo(Vendor, { foreignKey: 'vendor_id', as: 'vendor' });
+Vendor.hasMany(LabourInvoice, { foreignKey: 'vendor_id', as: 'labourInvoices' });
+
+// LABOUR INVOICE AUDIT FIELDS
+LabourInvoice.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
+User.hasMany(LabourInvoice, { foreignKey: 'created_by', as: 'createdLabourInvoices' });
+LabourInvoice.belongsTo(User, { foreignKey: 'updated_by', as: 'updater' });
+User.hasMany(LabourInvoice, { foreignKey: 'updated_by', as: 'updatedLabourInvoices' });
+
+// LABOUR INVOICE - ITEMS ASSOCIATIONS
+LabourInvoice.hasMany(LabourInvoiceItem, { foreignKey: 'invoice_id', as: 'items', onDelete: 'CASCADE' });
+LabourInvoiceItem.belongsTo(LabourInvoice, { foreignKey: 'invoice_id', as: 'invoice' });
+
+// LABOUR INVOICE ITEM - LABOUR ASSOCIATIONS
+LabourInvoiceItem.belongsTo(Labour, { foreignKey: 'labour_id', as: 'labour' });
+Labour.hasMany(LabourInvoiceItem, { foreignKey: 'labour_id', as: 'labourInvoiceItems' });
+
 // EXPORT MODELS
 module.exports = {
     sequelize,
@@ -488,9 +377,11 @@ module.exports = {
     SitePayment,
     Unit,
     Material,
-    MaterialEntry,
-    MaterialEntryHistory,
     Labour,
-    LabourEntry,
-    Vendor
+    Vendor,
+    MaterialInvoice,
+    MaterialInvoiceItem,
+    MaterialInvoiceHistory,
+    LabourInvoice,
+    LabourInvoiceItem
 };

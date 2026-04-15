@@ -62,8 +62,8 @@ function PayOutModal({ site, onClose, onSuccess, theme }) {
 		try {
 			const token = localStorage.getItem('accessToken');
 			const url = entry.type === 'material'
-				? `/api/material-entry/${entry.id}/mark-paid`
-				: `/api/labour-entry/${entry.id}/mark-paid`;
+				? `/api/material-invoice/${entry.id}/mark-paid`
+				: `/api/labour-invoice/${entry.id}/mark-paid`;
 			const res = await axios.patch(url, {}, { headers: { Authorization: `Bearer ${token}` } });
 			if (res.data.success) { await fetchPending(); onSuccess(); }
 		} catch (err) {
@@ -281,8 +281,8 @@ function Dashboard() {
 		{ id: 'active-sites',     title: 'Active Sites',     dataKey: 'activeSites',    icon: Building2,   color: 'bg-blue-500',   route: '/site',          format: 'number'   },
 		{ id: 'total-budget',     title: 'Total Budget',     dataKey: 'totalBudget',    icon: Wallet,      color: 'bg-green-500',  route: '/site',          format: 'currency', adminOnly: true },
 		{ id: 'client-paid',      title: 'Client Paid',      dataKey: 'clientPayments', icon: CreditCard,  color: 'bg-teal-500',   route: '/site',          format: 'currency', showOutstanding: true, adminOnly: true },
-		{ id: 'material-expense', title: 'Material Expense', dataKey: 'materialExpense',icon: IndianRupee, color: 'bg-orange-500', route: '/materialentry', format: 'currency' },
-		{ id: 'labour-expense',   title: 'Labour Expense',   dataKey: 'labourExpense',  icon: IndianRupee, color: 'bg-purple-500', route: '/labourentry',   format: 'currency' },
+		{ id: 'material-expense', title: 'Material Expense', dataKey: 'materialExpense',icon: IndianRupee, color: 'bg-orange-500', route: '/materialinvoice', format: 'currency' },
+		{ id: 'labour-expense',   title: 'Labour Expense',   dataKey: 'labourExpense',  icon: IndianRupee, color: 'bg-purple-500', route: '/labourinvoice',   format: 'currency' },
 		{ id: 'total-expense',    title: 'Total Expense',    dataKey: 'totalExpense',   icon: TrendingUp,  color: 'bg-red-500',    route: null,             format: 'currency' },
 	];
 
@@ -886,21 +886,21 @@ function Dashboard() {
 						<div className="flex gap-2">
 							<ThemeUI.Button
 								type="button"
-								onClick={() => navigate('/materialentry', { state: { openModal: true, siteId: selectedSite } })}
+								onClick={() => navigate('/materialinvoice', { state: { openModal: true, siteId: selectedSite } })}
 								gradientColors={{ start: theme.primaryGradientStart, end: theme.primaryGradientEnd }}
 								direction={theme.gradientDirection}
 								className="px-3 py-1.5 text-xs transition-all duration-200 hover:scale-105 flex items-center gap-1.5"
 							>
-								<Package className="h-3.5 w-3.5 me-2" /> Material Entry
+								<Package className="h-3.5 w-3.5 me-2" /> Material Invoice
 							</ThemeUI.Button>
 							<ThemeUI.Button
 								type="button"
-								onClick={() => navigate('/labourentry', { state: { openModal: true, siteId: selectedSite } })}
+								onClick={() => navigate('/labourinvoice', { state: { openModal: true, siteId: selectedSite } })}
 								gradientColors={{ start: theme.primaryGradientStart, end: theme.primaryGradientEnd }}
 								direction={theme.gradientDirection}
 								className="px-3 py-1.5 text-xs transition-all duration-200 hover:scale-105 flex items-center gap-1.5"
 							>
-								<Users className="h-3.5 w-3.5 me-2" /> Labour Entry
+								<Users className="h-3.5 w-3.5 me-2" /> Labour Invoice
 							</ThemeUI.Button>
 							<ThemeUI.Button
 								onClick={exportSiteSummaryToCSV}

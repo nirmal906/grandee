@@ -65,9 +65,9 @@ const uploadMiddleware = {
         limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
     }).single('checkout_photo'),
 
-    // Material entry invoice upload (stores in uploads/material-entries)
-    materialEntryUpload: multer({
-        storage: createStorage('material-entries'),
+    // Material invoice upload (stores in uploads/material-invoices)
+    materialInvoiceUpload: multer({
+        storage: createStorage('material-invoices'),
         fileFilter: (req, file, cb) => {
             const allowedImageTypes = [
                 'image/jpeg',

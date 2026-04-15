@@ -7,12 +7,12 @@ import { themeQuartz } from "ag-grid-community"
 import Layout from "./layout"
 import { useTheme } from "../context/themeContext"
 import { ThemeUI } from "../context/themeUI"
-import { ChevronRight, Loader, Edit, Search, Filter, Plus, Trash2, Eye, History, Clock } from "lucide-react"
+import { ChevronRight, Loader, Edit, Search, Filter, Plus, Trash2, Eye, History, Clock, X } from "lucide-react"
 import Modal from "./modal"
 import Offcanvas from "./offcanvas"
 import NoRowsOverlay from "./noRowsOverlay"
 
-function MaterialEntry() {
+function MaterialInvoice() {
     const { theme } = useTheme()
     const location = useLocation()
     const [isModalOpen, setIsModalOpen] = useState(false)
@@ -20,14 +20,13 @@ function MaterialEntry() {
     const [totalRows, setTotalRows] = useState(0)
     const [perPage, setPerPage] = useState(10)
     const [currentPage, setCurrentPage] = useState(1)
-    const [materialEntries, setMaterialEntries] = useState([])
+    const [invoices, setInvoices] = useState([])
     const [materials, setMaterials] = useState([])
     const [vendors, setVendors] = useState([])
     const [sites, setSites] = useState([])
     const [editingEntry, setEditingEntry] = useState(null)
     const [searchQuery, setSearchQuery] = useState("")
     const [statusFilter, setStatusFilter] = useState("")
-    const [materialFilter, setMaterialFilter] = useState("")
     const [vendorFilter, setVendorFilter] = useState("")
     const [siteFilter, setSiteFilter] = useState("")
     const [dateFromFilter, setDateFromFilter] = useState("")
@@ -44,32 +43,35 @@ function MaterialEntry() {
     const [invoiceRemoved, setInvoiceRemoved] = useState(false)
 
     // Typing animation
-    const [placeholder, setPlaceholder] = useState("Search by site or material...")
+    const [placeholder, setPlaceholder] = useState("Search by site or vendor...")
     const [currentWordIndex, setCurrentWordIndex] = useState(0)
     const [currentCharIndex, setCurrentCharIndex] = useState(0)
     const [isDeleting, setIsDeleting] = useState(false)
     const [isPaused, setIsPaused] = useState(false)
-    const words = ["site name", "material name", "vendor name"]
+    const words = ["site name", "vendor name", "invoice number"]
 
     // Ref to prevent circular updates
     const isUpdatingRef = useRef(false)
 
+    const emptyItem = { material_id: "", quantity: "", rate: "" }
+
     const [formData, setFormData] = useState({
         site_id: "",
-        material_id: "",
         vendor_id: "",
         date: "",
-        quantity: "",
-        rate: "",
+        invoice_number: "",
         additional_charges: "0",
         debit_entry: "",
         credit_entry: "",
+        notes: "",
         status: 1,
         invoice_photo: null,
     })
 
+    const [items, setItems] = useState([{ ...emptyItem }])
+
     // Permissions
-    const [materialEntryPermissions, setMaterialEntryPermissions] = useState({
+    const [permissions, setPermissions] = useState({
         can_add: false,
         can_edit: false,
         can_delete: false,
@@ -80,13 +82,13 @@ function MaterialEntry() {
         try {
             const permissionsStr = localStorage.getItem('userPermissions')
             if (permissionsStr) {
-                const permissions = JSON.parse(permissionsStr)
-                if (permissions.materialentry) {
+                const perms = JSON.parse(permissionsStr)
+                if (perms.materialinvoice) {
                     return {
-                        can_add: permissions.materialentry.can_add || false,
-                        can_edit: permissions.materialentry.can_edit || false,
-                        can_delete: permissions.materialentry.can_delete || false,
-                        can_view: permissions.materialentry.can_view || false
+                        can_add: perms.materialinvoice.can_add || false,
+                        can_edit: perms.materialinvoice.can_edit || false,
+                        can_delete: perms.materialinvoice.can_delete || false,
+                        can_view: perms.materialinvoice.can_view || false
                     }
                 }
             }
@@ -98,95 +100,60 @@ function MaterialEntry() {
     }, [])
 
     useEffect(() => {
-        const permissions = getUserPermissions()
-        setMaterialEntryPermissions(permissions)
+        const p = getUserPermissions()
+        setPermissions(p)
     }, [getUserPermissions])
 
     useEffect(() => {
         const handlePermissionsUpdate = () => {
-            const permissions = getUserPermissions()
-            setMaterialEntryPermissions(permissions)
+            const p = getUserPermissions()
+            setPermissions(p)
         }
         window.addEventListener('permissionsUpdated', handlePermissionsUpdate)
         return () => window.removeEventListener('permissionsUpdated', handlePermissionsUpdate)
     }, [getUserPermissions])
 
-    useEffect(() => {
-        if (location.state?.openModal && location.state?.siteId) {
-            if (materialEntryPermissions.can_add) {
-                setEditingEntry({ isNew: true })
-                setFormData({
-                    site_id: location.state.siteId,
-                    material_id: "",
-                    vendor_id: "",
-                    date: "",
-                    quantity: "",
-                    rate: "",
-                    additional_charges: "0",
-                    debit_entry: "",
-                    credit_entry: "",
-                    status: 1,
-                    invoice_photo: null,
-                })
-                setInvoicePreview(null)
-                setInvoiceRemoved(false)
-                setBackendErrors({})
-                setIsModalOpen(true)
-            }
-            window.history.replaceState({}, document.title)
-        }
-    }, [location.state, materialEntryPermissions.can_add])
-
-    // Fetch active sites
+    // Fetch dropdown data
     const fetchActiveSites = async () => {
         try {
-            const response = await axios.get(`/api/dashboard/sites`)
-            if (response.data.success) {
-                setSites(response.data.data)
-            }
+            const response = await axios.get(`/api/material-invoice/active-sites`)
+            if (response.data.success) setSites(response.data.data)
         } catch (err) {
             console.error("Error fetching sites:", err)
             toast.error("Failed to load sites")
         }
     }
 
-    // Fetch active materials
     const fetchActiveMaterials = async () => {
         try {
-            const response = await axios.get(`/api/material-entry/active-materials`)
-            if (response.data.success) {
-                setMaterials(response.data.data)
-            }
+            const response = await axios.get(`/api/material-invoice/active-materials`)
+            if (response.data.success) setMaterials(response.data.data)
         } catch (err) {
             console.error("Error fetching materials:", err)
             toast.error("Failed to load materials")
         }
     }
 
-    // Fetch active vendors
     const fetchActiveVendors = async () => {
         try {
-            const response = await axios.get(`/api/material-entry/active-vendors`)
-            if (response.data.success) {
-                setVendors(response.data.data)
-            }
+            const response = await axios.get(`/api/material-invoice/active-vendors`)
+            if (response.data.success) setVendors(response.data.data)
         } catch (err) {
             console.error("Error fetching vendors:", err)
             toast.error("Failed to load vendors")
         }
     }
 
-    // Fetch material entries
-    const fetchMaterialEntries = useCallback(async () => {
+    // Fetch invoices
+    const fetchInvoices = useCallback(async () => {
         setIsLoading(true)
         try {
-            const response = await axios.get(`/api/material-entry`, {
+            const response = await axios.get(`/api/material-invoice`, {
                 params: {
                     page: currentPage,
                     limit: perPage,
                     search: searchQuery,
                     status: statusFilter === "all" ? "" : statusFilter,
-                    material_id: materialFilter || "",
                     vendor_id: vendorFilter || "",
                     site_id: siteFilter || "",
                     date_from: dateFromFilter || "",
@@ -194,18 +161,18 @@ function MaterialEntry() {
                 },
             })
             if (response.data.success) {
-                setMaterialEntries(response.data.data)
+                setInvoices(response.data.data)
                 setTotalRows(response.data.total || 0)
             }
         } catch (err) {
-            console.error("Error fetching material entries:", err)
-            toast.error(err.response?.data?.message || "Failed to fetch material entries")
-            setMaterialEntries([])
+            console.error("Error fetching invoices:", err)
+            toast.error(err.response?.data?.message || "Failed to fetch invoices")
+            setInvoices([])
             setTotalRows(0)
         } finally {
             setIsLoading(false)
         }
-    }, [currentPage, perPage, searchQuery, statusFilter, materialFilter, vendorFilter, siteFilter, dateFromFilter, dateToFilter])
+    }, [currentPage, perPage, searchQuery, statusFilter, vendorFilter, siteFilter, dateFromFilter, dateToFilter])
 
     useEffect(() => {
         fetchActiveSites()
@@ -214,8 +181,8 @@ function MaterialEntry() {
     }, [])
 
     useEffect(() => {
-        fetchMaterialEntries()
-    }, [fetchMaterialEntries])
+        fetchInvoices()
+    }, [fetchInvoices])
 
     // Typing animation
     useEffect(() => {
@@ -227,7 +194,7 @@ function MaterialEntry() {
         const typingSpeed = isDeleting ? 50 : 100
         const timeout = setTimeout(() => {
             const currentWord = words[currentWordIndex]
-            
+
             if (!isDeleting && currentCharIndex < currentWord.length) {
                 setPlaceholder(`Search by ${currentWord.substring(0, currentCharIndex + 1)}...`)
                 setCurrentCharIndex(prev => prev + 1)
@@ -242,24 +209,29 @@ function MaterialEntry() {
                 setCurrentWordIndex(prev => (prev + 1) % words.length)
             }
         }, typingSpeed)
-        
+
         return () => clearTimeout(timeout)
     }, [currentCharIndex, currentWordIndex, isDeleting, isPaused, words])
 
-    // Calculate total amount
-    const calculateTotal = useCallback(() => {
-        const qty = Number(formData.quantity) || 0
-        const rate = Number(formData.rate) || 0
-        const additionalCharges = Number(formData.additional_charges) || 0
-        return (qty * rate) + additionalCharges
-    }, [formData.quantity, formData.rate, formData.additional_charges])
+    // Calculate items total
+    const itemsTotal = useMemo(() => {
+        return items.reduce((sum, item) => {
+            const qty = Number(item.quantity) || 0
+            const rate = Number(item.rate) || 0
+            return sum + (qty * rate)
+        }, 0)
+    }, [items])
 
-    const totalAmount = useMemo(() => calculateTotal(), [calculateTotal])
+    // Calculate total amount
+    const totalAmount = useMemo(() => {
+        const additionalCharges = Number(formData.additional_charges) || 0
+        return itemsTotal + additionalCharges
+    }, [itemsTotal, formData.additional_charges])
 
     // Auto-calculate debit/credit
     useEffect(() => {
         if (isUpdatingRef.current) return
-        
+
         if (totalAmount === 0) {
             setFormData(prev => ({
                 ...prev,
@@ -298,14 +270,57 @@ function MaterialEntry() {
         }, 100)
     }, [formData.debit_entry, formData.credit_entry, totalAmount])
 
+    // Item handlers
+    const handleItemChange = (index, field, value) => {
+        setItems(prev => {
+            const updated = [...prev]
+            updated[index] = { ...updated[index], [field]: value }
+            return updated
+        })
+        // Reset debit/credit when items change
+        setFormData(prev => ({ ...prev, debit_entry: "", credit_entry: "" }))
+    }
+
+    const handleItemMaterialChange = (index, selectedOption) => {
+        const materialId = selectedOption?.value || ""
+        if (materialId) {
+            const mat = materials.find(m => m.id === materialId)
+            setItems(prev => {
+                const updated = [...prev]
+                updated[index] = {
+                    ...updated[index],
+                    material_id: materialId,
+                    rate: mat?.standard_rate || updated[index].rate,
+                }
+                return updated
+            })
+        } else {
+            setItems(prev => {
+                const updated = [...prev]
+                updated[index] = { ...updated[index], material_id: "", rate: "" }
+                return updated
+            })
+        }
+        setFormData(prev => ({ ...prev, debit_entry: "", credit_entry: "" }))
+    }
+
+    const addItem = () => {
+        setItems(prev => [...prev, { ...emptyItem }])
+    }
+
+    const removeItem = (index) => {
+        if (items.length <= 1) return
+        setItems(prev => prev.filter((_, i) => i !== index))
+        setFormData(prev => ({ ...prev, debit_entry: "", credit_entry: "" }))
+    }
+
+    // History
     const handleViewHistory = async (entry) => {
         setSelectedEntry(entry)
         setIsHistoryModalOpen(true)
         setHistoryLoading(true)
         try {
-            const response = await axios.get(
-                `/api/material-entry/${entry.id}/history`
-            )
+            const response = await axios.get(`/api/material-invoice/${entry.id}/history`)
             if (response.data.success) {
                 setSelectedEntryHistory(response.data.data)
             }
@@ -324,6 +339,9 @@ function MaterialEntry() {
                 case 'created': return 'bg-green-100 text-green-800'
                 case 'updated': return 'bg-blue-100 text-blue-800'
                 case 'deleted': return 'bg-red-100 text-red-800'
+                case 'item_added': return 'bg-teal-100 text-teal-800'
+                case 'item_updated': return 'bg-indigo-100 text-indigo-800'
+                case 'item_removed': return 'bg-orange-100 text-orange-800'
                 default: return 'bg-gray-100 text-gray-800'
             }
         }
@@ -345,6 +363,29 @@ function MaterialEntry() {
             }
         }
 
+        const renderSnapshotItems = (snapshotJson) => {
+            if (!snapshotJson) return null
+            try {
+                const snapshot = JSON.parse(snapshotJson)
+                if (!snapshot.items || snapshot.items.length === 0) return null
+                return (
+                    <div className="mt-2">
+                        <div className="text-xs font-medium text-gray-600 mb-1">Items:</div>
+                        <div className="space-y-1">
+                            {snapshot.items.map((item, i) => (
+                                <div key={i} className="text-xs bg-gray-50 p-2 rounded flex justify-between">
+                                    <span>{item.material_name || `Material #${item.material_id}`}</span>
+                                    <span>Qty: {Number(item.quantity).toFixed(3)} x ₹{Number(item.rate).toFixed(2)} = ₹{(Number(item.quantity) * Number(item.rate)).toFixed(2)}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )
+            } catch (e) {
+                return null
+            }
+        }
+
         return (
             <Modal
                 isOpen={isHistoryModalOpen}
@@ -353,7 +394,7 @@ function MaterialEntry() {
                     setSelectedEntry(null)
                     setSelectedEntryHistory([])
                 }}
-                title={`Material Entry History - ${selectedEntry?.material?.name || 'Unknown'}`}
+                title={`Invoice History - ${selectedEntry?.invoice_number || `#${selectedEntry?.id}`}`}
                 size="lg"
             >
                 {historyLoading ? (
@@ -366,107 +407,42 @@ function MaterialEntry() {
                     </div>
                 ) : (
                     <div className="space-y-4">
-                        {selectedEntryHistory.map((record, index) => {
-                            const totalAmount = (
-                                Number(record.quantity) * Number(record.rate) + 
-                                Number(record.additional_charges)
-                            ).toFixed(2)
-                            
-                            return (
-                                <div
-                                    key={record.id}
-                                    className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
-                                >
-                                    <div className="flex items-start justify-between mb-3">
-                                        <div className="flex items-center gap-2">
-                                            <Clock size={16} className="text-gray-400" />
-                                            <span className="text-sm text-gray-600">
-                                                {new Date(record.performed_at).toLocaleString()}
-                                            </span>
-                                        </div>
-                                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getActionColor(record.action_type)}`}>
-                                            {record.action_type.toUpperCase()}
+                        {selectedEntryHistory.map((record) => (
+                            <div
+                                key={record.id}
+                                className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+                            >
+                                <div className="flex items-start justify-between mb-3">
+                                    <div className="flex items-center gap-2">
+                                        <Clock size={16} className="text-gray-400" />
+                                        <span className="text-sm text-gray-600">
+                                            {new Date(record.performed_at).toLocaleString()}
                                         </span>
                                     </div>
-
-                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm mb-3">
-                                        <div>
-                                            <span className="text-gray-500">Site:</span>{' '}
-                                            <span className="font-medium">{record.site?.name || '-'}</span>
-                                        </div>
-                                        <div>
-                                            <span className="text-gray-500">Material:</span>{' '}
-                                            <span className="font-medium">
-                                                {record.material?.name || '-'} ({record.material?.unit?.name || '-'})
-                                            </span>
-                                        </div>
-                                        <div>
-                                            <span className="text-gray-500">Vendor:</span>{' '}
-                                            <span className="font-medium">{record.vendor?.name || '-'}</span>
-                                        </div>
-                                        <div>
-                                            <span className="text-gray-500">Date:</span>{' '}
-                                            <span className="font-medium">
-                                                {new Date(record.date).toLocaleDateString()}
-                                            </span>
-                                        </div>
-                                        <div>
-                                            <span className="text-gray-500">Quantity:</span>{' '}
-                                            <span className="font-medium">{Number(record.quantity).toFixed(3)}</span>
-                                        </div>
-                                        <div>
-                                            <span className="text-gray-500">Rate:</span>{' '}
-                                            <span className="font-medium">₹{Number(record.rate).toFixed(2)}</span>
-                                        </div>
-                                        <div>
-                                            <span className="text-gray-500">Add. Charges:</span>{' '}
-                                            <span className="font-medium">
-                                                ₹{Number(record.additional_charges).toFixed(2)}
-                                            </span>
-                                        </div>
-                                        <div>
-                                            <span className="text-gray-500">Total:</span>{' '}
-                                            <span className="font-semibold text-blue-600">₹{totalAmount}</span>
-                                        </div>
-                                        <div>
-                                            <span className="text-gray-500">Paid:</span>{' '}
-                                            <span className="font-medium text-green-600">
-                                                ₹{Number(record.credit_entry).toFixed(2)}
-                                            </span>
-                                        </div>
-                                        <div>
-                                            <span className="text-gray-500">Due:</span>{' '}
-                                            <span className="font-medium text-red-600">
-                                                ₹{Number(record.debit_entry).toFixed(2)}
-                                            </span>
-                                        </div>
-                                        <div>
-                                            <span className="text-gray-500">Status:</span>{' '}
-                                            <span className={`px-2 py-0.5 rounded text-xs ${
-                                                record.status === 1 
-                                                    ? 'bg-green-100 text-green-800' 
-                                                    : 'bg-red-100 text-red-800'
-                                            }`}>
-                                                {record.status === 1 ? 'Active' : 'Inactive'}
-                                            </span>
-                                        </div>
-                                        <div className="col-span-2">
-                                            <span className="text-gray-500">Performed By:</span>{' '}
-                                            <span className="font-medium">
-                                                {record.performer?.name || 'System'} ({record.performer?.email || '-'})
-                                            </span>
-                                        </div>
-                                    </div>
-
-                                    {record.changed_fields && (
-                                        <div className="mt-3 pt-3 border-t border-gray-200">
-                                            <div className="text-sm font-medium text-gray-700 mb-2">Changes:</div>
-                                            {formatChangedFields(record.changed_fields)}
-                                        </div>
-                                    )}
+                                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getActionColor(record.action_type)}`}>
+                                        {record.action_type.replace('_', ' ').toUpperCase()}
+                                    </span>
                                 </div>
-                            )
-                        })}
+
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm mb-3">
+                                    <div>
+                                        <span className="text-gray-500">Performed By:</span>{' '}
+                                        <span className="font-medium">
+                                            {record.performer?.name || 'System'}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {renderSnapshotItems(record.snapshot)}
+
+                                {record.changed_fields && (
+                                    <div className="mt-3 pt-3 border-t border-gray-200">
+                                        <div className="text-sm font-medium text-gray-700 mb-2">Changes:</div>
+                                        {formatChangedFields(record.changed_fields)}
+                                    </div>
+                                )}
+                            </div>
+                        ))}
                     </div>
                 )}
             </Modal>
@@ -509,24 +485,24 @@ function MaterialEntry() {
     }
 
     const handleAddClick = () => {
-        if (!materialEntryPermissions.can_add) {
-            toast.error("You don't have permission to create material entry")
+        if (!permissions.can_add) {
+            toast.error("You don't have permission to create invoice")
             return
         }
         setEditingEntry({ isNew: true })
         setFormData({
             site_id: "",
-            material_id: "",
             vendor_id: "",
             date: "",
-            quantity: "",
-            rate: "",
+            invoice_number: "",
             additional_charges: "0",
             debit_entry: "",
             credit_entry: "",
+            notes: "",
             status: 1,
             invoice_photo: null,
         })
+        setItems([{ ...emptyItem }])
         setInvoicePreview(null)
         setInvoiceRemoved(false)
         setBackendErrors({})
@@ -534,27 +510,36 @@ function MaterialEntry() {
     }
 
     const handleEditClick = (entry) => {
-        if (!materialEntryPermissions.can_edit) {
-            toast.error("You don't have permission to edit material entry")
+        if (!permissions.can_edit) {
+            toast.error("You don't have permission to edit invoice")
             return
         }
         setEditingEntry(entry)
         setFormData({
             site_id: entry.site_id || "",
-            material_id: entry.material_id || "",
             vendor_id: entry.vendor_id || "",
             date: entry.date ? entry.date.split('T')[0] : "",
-            quantity: entry.quantity || "",
-            rate: entry.rate || "",
+            invoice_number: entry.invoice_number || "",
             additional_charges: entry.additional_charges || "0",
             debit_entry: entry.debit_entry || "",
             credit_entry: entry.credit_entry || "",
+            notes: entry.notes || "",
             status: entry.status === 1 ? 1 : 0,
             invoice_photo: null,
         })
+        // Populate items from entry
+        if (entry.items && entry.items.length > 0) {
+            setItems(entry.items.map(item => ({
+                material_id: item.material_id || "",
+                quantity: item.quantity || "",
+                rate: item.rate || "",
+            })))
+        } else {
+            setItems([{ ...emptyItem }])
+        }
         setInvoicePreview(
             entry.invoice_photo
-                ? `/uploads/material-entries/${entry.invoice_photo}`
+                ? `/uploads/material-invoices/${entry.invoice_photo}`
                 : null
         )
         setInvoiceRemoved(false)
@@ -573,6 +558,9 @@ function MaterialEntry() {
                 }
             })
 
+            // Append items as JSON string
+            payload.append("items", JSON.stringify(items))
+
             if (formData.invoice_photo) {
                 payload.append("invoice_photo", formData.invoice_photo)
             }
@@ -582,8 +570,8 @@ function MaterialEntry() {
             }
 
             const url = editingEntry?.isNew
-                ? `/api/material-entry`
-                : `/api/material-entry/${editingEntry.id}`
+                ? `/api/material-invoice`
+                : `/api/material-invoice/${editingEntry.id}`
 
             const response = await axios({
                 method: editingEntry?.isNew ? "post" : "put",
@@ -595,10 +583,10 @@ function MaterialEntry() {
             if (response.data.success) {
                 toast.success(
                     editingEntry?.isNew
-                        ? "Material entry created successfully"
-                        : "Material entry updated successfully"
+                        ? "Invoice created successfully"
+                        : "Invoice updated successfully"
                 )
-                fetchMaterialEntries()
+                fetchInvoices()
                 handleCancelEdit()
             }
         } catch (err) {
@@ -606,7 +594,7 @@ function MaterialEntry() {
                 setBackendErrors(err.response.data.errors)
                 toast.error("Please fix the errors in the form.")
             } else {
-                toast.error(err.response?.data?.message || "Failed to save material entry")
+                toast.error(err.response?.data?.message || "Failed to save invoice")
             }
         } finally {
             setIsLoading(false)
@@ -614,17 +602,17 @@ function MaterialEntry() {
     }
 
     const handleDeleteClick = async (entry) => {
-        if (!window.confirm(`Are you sure you want to delete this material entry?`)) return
+        if (!window.confirm(`Are you sure you want to delete this invoice?`)) return
 
         setIsLoading(true)
         try {
-            const response = await axios.delete(`/api/material-entry/${entry.id}`)
+            const response = await axios.delete(`/api/material-invoice/${entry.id}`)
             if (response.data.success) {
-                toast.success("Material entry deleted successfully")
-                fetchMaterialEntries()
+                toast.success("Invoice deleted successfully")
+                fetchInvoices()
             }
         } catch (err) {
-            toast.error(err.response?.data?.message || "Failed to delete material entry")
+            toast.error(err.response?.data?.message || "Failed to delete invoice")
         } finally {
             setIsLoading(false)
         }
@@ -634,17 +622,17 @@ function MaterialEntry() {
         setEditingEntry(null)
         setFormData({
             site_id: "",
-            material_id: "",
             vendor_id: "",
             date: "",
-            quantity: "",
-            rate: "",
+            invoice_number: "",
             additional_charges: "0",
             debit_entry: "",
             credit_entry: "",
+            notes: "",
             status: 1,
             invoice_photo: null,
         })
+        setItems([{ ...emptyItem }])
         setInvoicePreview(null)
         setInvoiceRemoved(false)
         setBackendErrors({})
@@ -662,53 +650,9 @@ function MaterialEntry() {
         setBackendErrors(prev => ({ ...prev, site_id: "" }))
     }
 
-    const handleMaterialChange = (selectedOption) => {
-        const materialId = selectedOption?.value || ""
-        setBackendErrors(prev => ({ ...prev, material_id: "" }))
-
-        if (materialId) {
-            const selectedMaterial = materials.find(m => m.id === materialId)
-            if (selectedMaterial && selectedMaterial.standard_rate !== undefined) {
-                setFormData(prev => ({
-                    ...prev,
-                    material_id: materialId,
-                    rate: selectedMaterial.standard_rate,
-                    debit_entry: "",
-                    credit_entry: "",
-                }))
-            } else {
-                setFormData(prev => ({
-                    ...prev,
-                    material_id: materialId,
-                    debit_entry: "",
-                    credit_entry: "",
-                }))
-            }
-        } else {
-            setFormData(prev => ({
-                ...prev,
-                material_id: "",
-                rate: "",
-                debit_entry: "",
-                credit_entry: "",
-            }))
-        }
-    }
-
     const handleVendorChange = (selectedOption) => {
         setFormData(prev => ({ ...prev, vendor_id: selectedOption?.value || "" }))
         setBackendErrors(prev => ({ ...prev, vendor_id: "" }))
-    }
-
-    const handleRateChange = (e) => {
-        const value = e.target.value
-        setFormData(prev => ({
-            ...prev,
-            rate: value,
-            debit_entry: "",
-            credit_entry: "",
-        }))
-        setBackendErrors(prev => ({ ...prev, rate: "" }))
     }
 
     const handleAdditionalChargesChange = (e) => {
@@ -759,72 +703,76 @@ function MaterialEntry() {
                 pinned: 'left'
             },
             {
-                headerName: "Site",
-                field: "site.name",
-                valueGetter: (params) => params.data.site?.name || "-",
-                sortable: true,
-                flex: 1,
-                minWidth: 200,
-            },
-            {
                 headerName: "Date",
                 field: "date",
                 width: 120,
                 valueFormatter: (p) => (p.value ? new Date(p.value).toLocaleDateString() : "—")
             },
             {
-                headerName: "Material",
-                field: "material.name",
-                valueGetter: (params) => params.data.material?.name || "-",
+                headerName: "Site",
+                field: "site.name",
+                valueGetter: (params) => params.data.site?.name || "-",
                 sortable: true,
                 flex: 1,
-                minWidth: 100,
+                minWidth: 160,
             },
             {
                 headerName: "Vendor",
                 field: "vendor.name",
                 valueGetter: (params) => params.data.vendor?.name || "-",
-                minWidth: 120,
                 flex: 1,
+                minWidth: 140,
             },
             {
-                headerName: "Quantity",
-                field: "quantity",
-                width: 140,
-                valueFormatter: (params) => Number(params.value || 0).toFixed(3),
+                headerName: "Invoice #",
+                field: "invoice_number",
+                width: 130,
+                valueGetter: (params) => params.data.invoice_number || "—",
             },
             {
-                headerName: "Rate",
-                field: "rate",
-                width: 140,
-                valueFormatter: (params) => `₹${Number(params.value || 0).toFixed(2)}`,
+                headerName: "Items",
+                width: 80,
+                valueGetter: (params) => params.data.items?.length || 0,
+            },
+            {
+                headerName: "Items Total",
+                width: 120,
+                valueGetter: (params) => {
+                    const items = params.data.items || []
+                    return items.reduce((sum, item) => {
+                        return sum + (parseFloat(item.quantity) || 0) * (parseFloat(item.rate) || 0)
+                    }, 0).toFixed(2)
+                },
+                valueFormatter: (params) => `₹${Number(params.value).toFixed(2)}`,
             },
             {
                 headerName: "Add. Charges",
                 field: "additional_charges",
-                width: 140,
+                width: 120,
                 valueFormatter: (p) => (p.value > 0 ? `₹${Number(p.value).toFixed(2)}` : "—")
             },
             {
                 headerName: "Total",
                 width: 120,
                 valueGetter: (params) => {
-                    const qty = parseFloat(params.data.quantity) || 0
-                    const rate = parseFloat(params.data.rate) || 0
-                    const additionalCharges = parseFloat(params.data.additional_charges) || 0
-                    return (qty * rate + additionalCharges).toFixed(2)
+                    const items = params.data.items || []
+                    const itemsTotal = items.reduce((sum, item) => {
+                        return sum + (parseFloat(item.quantity) || 0) * (parseFloat(item.rate) || 0)
+                    }, 0)
+                    const additional = parseFloat(params.data.additional_charges) || 0
+                    return (itemsTotal + additional).toFixed(2)
                 },
                 valueFormatter: (params) => `₹${Number(params.value).toFixed(2)}`,
             },
             {
-                headerName: "Debit",
-                field: "debit_entry",
+                headerName: "Paid",
+                field: "credit_entry",
                 width: 110,
                 valueFormatter: (p) => (p.value > 0 ? `₹${Number(p.value).toFixed(2)}` : "—")
             },
             {
-                headerName: "Credit",
-                field: "credit_entry",
+                headerName: "Due",
+                field: "debit_entry",
                 width: 110,
                 valueFormatter: (p) => (p.value > 0 ? `₹${Number(p.value).toFixed(2)}` : "—")
             },
@@ -833,7 +781,7 @@ function MaterialEntry() {
                 width: 100,
                 cellRenderer: (params) => {
                     if (!params.data?.invoice_photo) return "—"
-                    const url = `/uploads/material-entries/${params.data.invoice_photo}`
+                    const url = `/uploads/material-invoices/${params.data.invoice_photo}`
                     return (
                         <a
                             href={url}
@@ -858,7 +806,7 @@ function MaterialEntry() {
             }
         ]
 
-        if (materialEntryPermissions.can_edit || materialEntryPermissions.can_delete) {
+        if (permissions.can_edit || permissions.can_delete) {
             baseColumns.push({
                 headerName: "Actions",
                 cellRenderer: (params) => (
@@ -870,7 +818,7 @@ function MaterialEntry() {
                         >
                             <History size={16} />
                         </button>
-                        {materialEntryPermissions.can_edit && (
+                        {permissions.can_edit && (
                             <button
                                 onClick={() => handleEditClick(params.data)}
                                 className="p-1 text-blue-600 hover:text-blue-800 transition-colors"
@@ -879,7 +827,7 @@ function MaterialEntry() {
                                 <Edit size={16} style={{ color: theme.primaryGradientStart }} />
                             </button>
                         )}
-                        {materialEntryPermissions.can_delete && (
+                        {permissions.can_delete && (
                             <button
                                 onClick={() => handleDeleteClick(params.data)}
                                 className="p-1 text-red-600 hover:text-red-800 transition-colors"
@@ -898,13 +846,14 @@ function MaterialEntry() {
         }
 
         return baseColumns
-    }, [theme.primaryGradientStart, currentPage, perPage, materialEntryPermissions])
+    }, [theme.primaryGradientStart, currentPage, perPage, permissions])
 
     // Form Render
     const renderEntryForm = () => {
         return (
             <div className="space-y-6">
-                <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-4">
+                {/* Header Fields */}
+                <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
                     <ThemeUI.FormField label="Site" name="site_id" error={backendErrors.site_id} required>
                         <ThemeUI.Select
                             value={formData.site_id}
@@ -918,27 +867,13 @@ function MaterialEntry() {
                         />
                     </ThemeUI.FormField>
 
-                    <ThemeUI.FormField label="Material" name="material_id" error={backendErrors.material_id} required>
-                        <ThemeUI.Select
-                            value={formData.material_id}
-                            onChange={handleMaterialChange}
-                            options={materials.map(material => ({
-                                value: material.id,
-                                label: `${material.name} (${material.unit?.name})`
-                            }))}
-                            placeholder="Select material"
-                            error={backendErrors.material_id}
-                        />
-                    </ThemeUI.FormField>
-
-                    <ThemeUI.FormField label="Vendor" name="vendor_id" error={backendErrors.vendor_id}>
+                    <ThemeUI.FormField label="Vendor" name="vendor_id" error={backendErrors.vendor_id} required>
                         <ThemeUI.Select
                             value={formData.vendor_id}
                             onChange={handleVendorChange}
                             options={vendors.map(vendor => ({ value: vendor.id, label: vendor.name }))}
                             placeholder="Select vendor"
                             error={backendErrors.vendor_id}
-                            isClearable
                         />
                     </ThemeUI.FormField>
 
@@ -953,32 +888,124 @@ function MaterialEntry() {
                         />
                     </ThemeUI.FormField>
 
-                    <ThemeUI.FormField label="Quantity" name="quantity" error={backendErrors.quantity} required>
+                    <ThemeUI.FormField label="Invoice Number" name="invoice_number" error={backendErrors.invoice_number}>
                         <ThemeUI.Input
-                            name="quantity"
-                            type="number"
-                            step="0.001"
-                            min="0"
-                            value={formData.quantity}
+                            name="invoice_number"
+                            type="text"
+                            value={formData.invoice_number}
                             onChange={handleInputChange}
-                            placeholder="0.000"
-                            error={backendErrors.quantity}
+                            placeholder="e.g. INV-001"
+                            error={backendErrors.invoice_number}
                         />
                     </ThemeUI.FormField>
+                </div>
 
-                    <ThemeUI.FormField label="Rate (₹)" name="rate" error={backendErrors.rate} required>
-                        <ThemeUI.Input
-                            name="rate"
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={formData.rate}
-                            onChange={handleRateChange}
-                            placeholder="0.00"
-                            error={backendErrors.rate}
-                        />
-                    </ThemeUI.FormField>
+                {/* Items Table */}
+                <div>
+                    <div className="flex items-center justify-between mb-2">
+                        <label className="block text-sm font-medium text-gray-700">
+                            Invoice Items <span className="text-red-500">*</span>
+                        </label>
+                        <button
+                            type="button"
+                            onClick={addItem}
+                            className="flex items-center gap-1 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
+                            style={{ color: theme.primaryGradientStart, backgroundColor: `${theme.primaryGradientStart}15` }}
+                        >
+                            <Plus size={14} /> Add Item
+                        </button>
+                    </div>
 
+                    {backendErrors.items && (
+                        <div className="text-red-500 text-xs mb-2">{backendErrors.items}</div>
+                    )}
+
+                    <div className="border border-gray-200 rounded-lg overflow-hidden">
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr className="bg-gray-50 border-b border-gray-200">
+                                    <th className="px-3 py-2 text-left font-medium text-gray-600">#</th>
+                                    <th className="px-3 py-2 text-left font-medium text-gray-600">Material *</th>
+                                    <th className="px-3 py-2 text-left font-medium text-gray-600">Quantity *</th>
+                                    <th className="px-3 py-2 text-left font-medium text-gray-600">Rate (₹) *</th>
+                                    <th className="px-3 py-2 text-right font-medium text-gray-600">Line Total</th>
+                                    <th className="px-3 py-2 text-center font-medium text-gray-600 w-12"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {items.map((item, index) => {
+                                    const lineTotal = (Number(item.quantity) || 0) * (Number(item.rate) || 0)
+                                    return (
+                                        <tr key={index} className="border-b border-gray-100 last:border-b-0">
+                                            <td className="px-3 py-2 text-gray-500">{index + 1}</td>
+                                            <td className="px-3 py-2" style={{ minWidth: 200 }}>
+                                                <ThemeUI.Select
+                                                    value={item.material_id}
+                                                    onChange={(selected) => handleItemMaterialChange(index, selected)}
+                                                    options={materials.map(m => ({
+                                                        value: m.id,
+                                                        label: `${m.name} (${m.unit?.name || '-'})`
+                                                    }))}
+                                                    placeholder="Select material"
+                                                    menuPortalTarget={document.body}
+                                                />
+                                            </td>
+                                            <td className="px-3 py-2" style={{ minWidth: 120 }}>
+                                                <ThemeUI.Input
+                                                    type="number"
+                                                    step="0.001"
+                                                    min="0"
+                                                    value={item.quantity}
+                                                    onChange={(e) => handleItemChange(index, 'quantity', e.target.value)}
+                                                    placeholder="0.000"
+                                                />
+                                            </td>
+                                            <td className="px-3 py-2" style={{ minWidth: 120 }}>
+                                                <ThemeUI.Input
+                                                    type="number"
+                                                    step="0.01"
+                                                    min="0"
+                                                    value={item.rate}
+                                                    onChange={(e) => handleItemChange(index, 'rate', e.target.value)}
+                                                    placeholder="0.00"
+                                                />
+                                            </td>
+                                            <td className="px-3 py-2 text-right font-medium">
+                                                ₹{lineTotal.toFixed(2)}
+                                            </td>
+                                            <td className="px-3 py-2 text-center">
+                                                {items.length > 1 && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeItem(index)}
+                                                        className="p-1 text-red-500 hover:text-red-700 transition-colors"
+                                                        title="Remove item"
+                                                    >
+                                                        <X size={16} />
+                                                    </button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    )
+                                })}
+                            </tbody>
+                            <tfoot>
+                                <tr className="bg-gray-50 border-t border-gray-200">
+                                    <td colSpan={4} className="px-3 py-2 text-right font-medium text-gray-700">
+                                        Items Total:
+                                    </td>
+                                    <td className="px-3 py-2 text-right font-semibold">
+                                        ₹{itemsTotal.toFixed(2)}
+                                    </td>
+                                    <td></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+
+                {/* Charges & Payment */}
+                <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-4">
                     <ThemeUI.FormField label="Additional Charges (₹)" name="additional_charges" error={backendErrors.additional_charges}>
                         <ThemeUI.Input
                             name="additional_charges"
@@ -1103,35 +1130,62 @@ function MaterialEntry() {
                             placeholder="Select status"
                         />
                     </ThemeUI.FormField>
-					{/* Invoice Photo Upload */}
-					<ThemeUI.FormField
-						label="Invoice / Bill Photo (optional)"
-						name="invoice_photo"
-						error={backendErrors.invoice_photo}
-					>
-						<ThemeUI.FileInput
-							id="invoicePhotoInput"
-							name="invoice_photo"
-							onChange={handleInvoiceChange}
-							accept="image/*"
-							preview={invoicePreview}
-							onDelete={handleInvoiceRemove}
-							error={backendErrors.invoice_photo}
-							showDeleteIcon={true}
-						/>
-						<p className="text-xs text-gray-500 mt-1">
-							Upload clear photo of invoice or bill (JPG/PNG recommended, max 5MB)
-						</p>
-					</ThemeUI.FormField>
                 </div>
 
+                {/* Notes & Photo */}
+                <div className="grid md:grid-cols-2 gap-4">
+                    <ThemeUI.FormField label="Notes" name="notes" error={backendErrors.notes}>
+                        <textarea
+                            name="notes"
+                            value={formData.notes}
+                            onChange={handleInputChange}
+                            rows={3}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                            placeholder="Add any notes..."
+                        />
+                    </ThemeUI.FormField>
+
+                    <ThemeUI.FormField
+                        label="Invoice / Bill Photo (optional)"
+                        name="invoice_photo"
+                        error={backendErrors.invoice_photo}
+                    >
+                        <ThemeUI.FileInput
+                            id="invoicePhotoInput"
+                            name="invoice_photo"
+                            onChange={handleInvoiceChange}
+                            accept="image/*"
+                            preview={invoicePreview}
+                            onDelete={handleInvoiceRemove}
+                            error={backendErrors.invoice_photo}
+                            showDeleteIcon={true}
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                            Upload clear photo of invoice or bill (JPG/PNG recommended, max 5MB)
+                        </p>
+                    </ThemeUI.FormField>
+                </div>
+
+                {/* Summary Bar */}
                 {totalAmount > 0 && (
                     <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
                         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                             <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
                                 <div className="flex items-center gap-2">
-                                    <span className="text-slate-500">Total:</span>
+                                    <span className="text-slate-500">Items Total:</span>
                                     <span className="font-semibold text-slate-900">
+                                        ₹{itemsTotal.toFixed(2)}
+                                    </span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-slate-500">+ Charges:</span>
+                                    <span className="font-semibold text-slate-900">
+                                        ₹{Number(formData.additional_charges || 0).toFixed(2)}
+                                    </span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-slate-500">Total:</span>
+                                    <span className="font-semibold text-blue-700">
                                         ₹{totalAmount.toFixed(2)}
                                     </span>
                                 </div>
@@ -1153,7 +1207,7 @@ function MaterialEntry() {
                                 totalAmount
                             ) > 0.01 && (
                                 <div className="flex items-center gap-2 text-xs text-red-700 bg-red-100 px-3 py-1.5 rounded-full">
-                                    ⚠ Amount mismatch
+                                    Amount mismatch
                                 </div>
                             )}
                         </div>
@@ -1179,9 +1233,9 @@ function MaterialEntry() {
                                 Saving...
                             </>
                         ) : editingEntry?.isNew ? (
-                            "Create Entry"
+                            "Create Invoice"
                         ) : (
-                            "Update Entry"
+                            "Update Invoice"
                         )}
                     </ThemeUI.Button>
                 </div>
@@ -1192,7 +1246,7 @@ function MaterialEntry() {
     return (
         <Layout>
             <div className="flex items-center mb-4">
-                <h1 className="text-2xl font-bold max-sm:text-xl flex-1">Material Entry Management</h1>
+                <h1 className="text-2xl font-bold max-sm:text-xl flex-1">Material Invoice Management</h1>
                 <nav className="flex items-center text-sm text-gray-500 whitespace-nowrap overflow-x-auto">
                     <ol className="flex items-center">
                         <li>
@@ -1202,7 +1256,7 @@ function MaterialEntry() {
                             <ChevronRight className="h-4 w-4 mx-1" />
                         </li>
                         <li style={{ color: theme.primaryGradientStart }} className="font-medium">
-                            Material Entries
+                            Material Invoices
                         </li>
                     </ol>
                 </nav>
@@ -1225,13 +1279,13 @@ function MaterialEntry() {
                         >
                             <Filter size={16} className="mr-2" /> Filters
                         </ThemeUI.Button>
-                        {materialEntryPermissions.can_add && (
+                        {permissions.can_add && (
                             <ThemeUI.Button
                                 onClick={handleAddClick}
                                 gradientColors={{ start: theme.primaryGradientStart, end: theme.primaryGradientEnd }}
                                 direction={theme.gradientDirection}
                             >
-                                <Plus size={16} className="mr-2" /> Add Entry
+                                <Plus size={16} className="mr-2" /> Add Invoice
                             </ThemeUI.Button>
                         )}
                     </div>
@@ -1251,7 +1305,7 @@ function MaterialEntry() {
                         paginationPanelHeight: 50,
                     })}
                     defaultColDef={{ resizable: false }}
-                    rowData={materialEntries}
+                    rowData={invoices}
                     rowHeight={55}
                     columnDefs={columnDefs}
                     pagination
@@ -1259,7 +1313,7 @@ function MaterialEntry() {
                     paginationPageSizeSelector={[10, 20, 50, 100]}
                     suppressPaginationPanel={false}
                     noRowsOverlayComponent={NoRowsOverlay}
-                    noRowsOverlayComponentParams={{ text: "No Material Entries Found" }}
+                    noRowsOverlayComponentParams={{ text: "No Material Invoices Found" }}
                     onPaginationChanged={(params) => {
                         if (params.api) {
                             const newPage = params.api.paginationGetCurrentPage() + 1
@@ -1277,7 +1331,7 @@ function MaterialEntry() {
             <Modal
                 isOpen={isModalOpen}
                 onClose={handleCancelEdit}
-                title={editingEntry?.isNew ? "Add Material Entry" : "Edit Material Entry"}
+                title={editingEntry?.isNew ? "Add Material Invoice" : "Edit Material Invoice"}
                 size="full"
             >
                 {renderEntryForm()}
@@ -1303,22 +1357,6 @@ function MaterialEntry() {
                                 label: site.name
                             }))}
                             placeholder="All sites"
-                            isClearable
-                        />
-                    </ThemeUI.FormField>
-
-                    <ThemeUI.FormField label="Material Filter">
-                        <ThemeUI.Select
-                            value={materialFilter}
-                            onChange={(selected) => {
-                                setMaterialFilter(selected?.value || "")
-                                setCurrentPage(1)
-                            }}
-                            options={materials.map(material => ({
-                                value: material.id,
-                                label: material.name
-                            }))}
-                            placeholder="All materials"
                             isClearable
                         />
                     </ThemeUI.FormField>
@@ -1384,7 +1422,6 @@ function MaterialEntry() {
                         <ThemeUI.Button
                             onClick={() => {
                                 setStatusFilter("")
-                                setMaterialFilter("")
                                 setVendorFilter("")
                                 setSiteFilter("")
                                 setDateFromFilter("")
@@ -1412,4 +1449,4 @@ function MaterialEntry() {
     )
 }
 
-export default MaterialEntry
+export default MaterialInvoice

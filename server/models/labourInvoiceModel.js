@@ -1,8 +1,8 @@
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/db');
 
-const LabourEntry = sequelize.define(
-    'LabourEntry',
+const LabourInvoice = sequelize.define(
+    'LabourInvoice',
     {
         id: {
             type: DataTypes.BIGINT,
@@ -13,35 +13,23 @@ const LabourEntry = sequelize.define(
             type: DataTypes.BIGINT,
             allowNull: false,
             references: { model: 'sites', key: 'id' },
-            comment: 'Site for which labour entry is being made'
-        },
-        labour_id: {
-            type: DataTypes.BIGINT,
-            allowNull: false,
-            references: { model: 'labours', key: 'id' },
-            comment: 'Labour type reference'
+            comment: 'Site for which labour invoice is created'
         },
         vendor_id: {
             type: DataTypes.BIGINT,
-            allowNull: true,
+            allowNull: false,
             references: { model: 'vendors', key: 'id' },
-            comment: 'Vendor reference (optional)'
+            comment: 'Labour vendor'
         },
         date: {
             type: DataTypes.DATEONLY,
             allowNull: false,
-            comment: 'Date of labour entry'
+            comment: 'Invoice date'
         },
-        no_of_workers: {
-            type: DataTypes.INTEGER,
-            allowNull: false,
-            comment: 'Number of workers for this entry'
-        },
-        rate_per_worker: {
-            type: DataTypes.DECIMAL(10, 2),
+        invoice_number: {
+            type: DataTypes.STRING(100),
             allowNull: true,
-            defaultValue: null,
-            comment: 'Rate per worker - null until admin approves for non-admin entries'
+            comment: 'Vendor invoice number (user-entered)'
         },
         debit_entry: {
             type: DataTypes.DECIMAL(10, 2),
@@ -54,6 +42,11 @@ const LabourEntry = sequelize.define(
             allowNull: true,
             defaultValue: null,
             comment: 'Credit amount (paid) - null until admin approves'
+        },
+        notes: {
+            type: DataTypes.TEXT,
+            allowNull: true,
+            comment: 'Additional notes'
         },
         status: {
             type: DataTypes.TINYINT,
@@ -82,30 +75,23 @@ const LabourEntry = sequelize.define(
             type: DataTypes.BIGINT,
             allowNull: true,
             references: { model: 'users', key: 'id' }
-        },
-        total_amount: {
-            type: DataTypes.VIRTUAL(DataTypes.DECIMAL(12, 2), ['no_of_workers', 'rate_per_worker']),
-            get() {
-                const workers = parseFloat(this.no_of_workers) || 0;
-                const rate    = parseFloat(this.rate_per_worker) || 0;
-                return parseFloat((workers * rate).toFixed(2));
-            }
         }
     },
     {
-        tableName: 'labour_entrys',
+        tableName: 'labour_invoices',
         timestamps: true,
         createdAt: 'created_at',
         updatedAt: 'updated_at',
         indexes: [
-            { name: 'idx_labour_id',        fields: ['labour_id'] },
-            { name: 'idx_site_id',          fields: ['site_id'] },
-            { name: 'idx_date',             fields: ['date'] },
-            { name: 'idx_status',           fields: ['status'] },
-            { name: 'idx_approval_status',  fields: ['approval_status'] },
-            { name: 'idx_site_labour_date', fields: ['site_id', 'labour_id', 'date'] }
+            { name: 'idx_li_site_id', fields: ['site_id'] },
+            { name: 'idx_li_vendor_id', fields: ['vendor_id'] },
+            { name: 'idx_li_date', fields: ['date'] },
+            { name: 'idx_li_status', fields: ['status'] },
+            { name: 'idx_li_approval_status', fields: ['approval_status'] },
+            { name: 'idx_li_site_vendor_date', fields: ['site_id', 'vendor_id', 'date'] },
+            { name: 'uq_li_vendor_invoice', fields: ['vendor_id', 'invoice_number'], unique: true }
         ]
     }
 );
 
-module.exports = LabourEntry;
+module.exports = LabourInvoice;

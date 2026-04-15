@@ -1,4 +1,4 @@
-const { sequelize, Sequelize, User, Role, UserRole, Site, MaterialEntry, LabourEntry, Material, Labour, Vendor, SitePayment } = require('../models');
+const { sequelize, Sequelize, User, Role, UserRole, Site, Material, Labour, Vendor, SitePayment, MaterialInvoice, MaterialInvoiceItem, LabourInvoice, LabourInvoiceItem } = require('../models');
 const { Op, fn, col, literal, QueryTypes } = require('sequelize');
 const bcrypt           = require('bcryptjs');
 const { v4: uuidv4 }   = require('uuid');
@@ -43,23 +43,23 @@ const actionController = {
                 const [matResult, labResult, payResult] = await Promise.all([
                     sequelize.query(`
                         SELECT
-                            COALESCE(SUM(credit_entry), 0)                                                AS paid,
-                            COALESCE(SUM((quantity * rate) + additional_charges), 0)                      AS total,
-                            COALESCE(SUM((quantity * rate) + additional_charges) - SUM(credit_entry), 0)  AS pending
-                        FROM material_entrys
-                        WHERE site_id = :site_id AND status = 1
+                            COALESCE(SUM(mi.credit_entry), 0)                                              AS paid,
+                            COALESCE(SUM(mi.credit_entry) + SUM(mi.debit_entry), 0)                        AS total,
+                            COALESCE(SUM(mi.debit_entry), 0)                                               AS pending
+                        FROM material_invoices mi
+                        WHERE mi.site_id = :site_id AND mi.status = 1
                     `, { replacements: { site_id: site.id }, type: QueryTypes.SELECT }),
 
-                    // ── Only approved labour entries count toward financials ──
+                    // ── Only approved labour invoices count toward financials ──
                     sequelize.query(`
                         SELECT
-                            COALESCE(SUM(credit_entry), 0)                                                AS paid,
-                            COALESCE(SUM(no_of_workers * rate_per_worker), 0)                             AS total,
-                            COALESCE(SUM(no_of_workers * rate_per_worker) - SUM(credit_entry), 0)         AS pending
-                        FROM labour_entrys
-                        WHERE site_id = :site_id
-                          AND status = 1
-                          AND approval_status = 'approved'
+                            COALESCE(SUM(li.credit_entry), 0)                                              AS paid,
+                            COALESCE(SUM(li.credit_entry) + SUM(li.debit_entry), 0)                        AS total,
+                            COALESCE(SUM(li.debit_entry), 0)                                               AS pending
+                        FROM labour_invoices li
+                        WHERE li.site_id = :site_id
+                          AND li.status = 1
+                          AND li.approval_status = 'approved'
                     `, { replacements: { site_id: site.id }, type: QueryTypes.SELECT }),
 
                     SitePayment.findOne({
@@ -132,43 +132,41 @@ const actionController = {
             const [materialRows, labourRows] = await Promise.all([
                 sequelize.query(`
                     SELECT
-                        me.id,
-                        me.date,
-                        me.quantity,
-                        me.rate,
-                        me.additional_charges,
-                        me.credit_entry,
-                        (me.quantity * me.rate + me.additional_charges)                         AS total_amount,
-                        (me.quantity * me.rate + me.additional_charges - me.credit_entry)        AS pending_amount,
-                        m.name AS material_name,
+                        mi.id,
+                        mi.date,
+                        mi.additional_charges,
+                        mi.credit_entry,
+                        mi.debit_entry,
+                        (mi.credit_entry + mi.debit_entry)   AS total_amount,
+                        mi.debit_entry                       AS pending_amount,
+                        mi.invoice_number,
                         v.name AS vendor_name
-                    FROM material_entrys me
-                    LEFT JOIN materials m ON m.id = me.material_id
-                    LEFT JOIN vendors   v ON v.id = me.vendor_id
-                    WHERE me.site_id = :site_id
-                      AND me.status  = 1
-                      AND (me.quantity * me.rate + me.additional_charges - me.credit_entry) > 0
-                    ORDER BY me.date DESC
+                    FROM material_invoices mi
+                    LEFT JOIN vendors v ON v.id = mi.vendor_id
+                    WHERE mi.site_id = :site_id
+                      AND mi.status  = 1
+                      AND mi.debit_entry > 0
+                    ORDER BY mi.date DESC
                 `, { replacements: { site_id: parseInt(site_id) }, type: QueryTypes.SELECT }),
 
-                // ── Only approved labour entries in payout pending ──
+                // ── Only approved labour invoices in payout pending ──
                 sequelize.query(`
                     SELECT
-                        le.id,
-                        le.date,
-                        le.no_of_workers                                                         AS quantity,
-                        le.rate_per_worker                                                       AS rate,
-                        le.credit_entry,
-                        (le.no_of_workers * le.rate_per_worker)                                  AS total_amount,
-                        (le.no_of_workers * le.rate_per_worker - le.credit_entry)                AS pending_amount,
-                        l.name AS labour_name
-                    FROM labour_entrys le
-                    LEFT JOIN labours l ON l.id = le.labour_id
-                    WHERE le.site_id = :site_id
-                      AND le.status  = 1
-                      AND le.approval_status = 'approved'
-                      AND (le.no_of_workers * le.rate_per_worker - le.credit_entry) > 0
-                    ORDER BY le.date DESC
+                        li.id,
+                        li.date,
+                        li.credit_entry,
+                        li.debit_entry,
+                        (li.credit_entry + li.debit_entry)   AS total_amount,
+                        li.debit_entry                       AS pending_amount,
+                        li.invoice_number,
+                        v.name AS vendor_name
+                    FROM labour_invoices li
+                    LEFT JOIN vendors v ON v.id = li.vendor_id
+                    WHERE li.site_id = :site_id
+                      AND li.status  = 1
+                      AND li.approval_status = 'approved'
+                      AND li.debit_entry > 0
+                    ORDER BY li.date DESC
                 `, { replacements: { site_id: parseInt(site_id) }, type: QueryTypes.SELECT }),
             ]);
 
@@ -176,10 +174,10 @@ const actionController = {
                 id:                 e.id,
                 type:               'material',
                 date:               e.date,
-                name:               e.material_name || 'N/A',
+                name:               e.invoice_number || `Invoice #${e.id}`,
                 vendor:             e.vendor_name   || '-',
-                quantity:           parseFloat(e.quantity           || 0),
-                rate:               parseFloat(e.rate               || 0),
+                quantity:           0,
+                rate:               0,
                 additional_charges: parseFloat(e.additional_charges || 0),
                 total_amount:       parseFloat(e.total_amount       || 0),
                 paid_amount:        parseFloat(e.credit_entry       || 0),
@@ -190,10 +188,10 @@ const actionController = {
                 id:                 e.id,
                 type:               'labour',
                 date:               e.date,
-                name:               e.labour_name || 'N/A',
-                vendor:             '-',
-                quantity:           parseFloat(e.quantity       || 0),
-                rate:               parseFloat(e.rate           || 0),
+                name:               e.invoice_number || `Invoice #${e.id}`,
+                vendor:             e.vendor_name   || '-',
+                quantity:           0,
+                rate:               0,
                 additional_charges: 0,
                 total_amount:       parseFloat(e.total_amount   || 0),
                 paid_amount:        parseFloat(e.credit_entry   || 0),
@@ -221,44 +219,43 @@ const actionController = {
     markMaterialEntryPaid: async (req, res) => {
         try {
             const { entry_id } = req.params;
-            const entry = await MaterialEntry.findByPk(entry_id);
-            if (!entry) return res.status(404).json({ success: false, message: 'Entry not found' });
+            const invoice = await MaterialInvoice.findByPk(entry_id);
+            if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
 
-            const allowedIds = await resolveAllowedSiteIds(req.user, entry.site_id);
+            const allowedIds = await resolveAllowedSiteIds(req.user, invoice.site_id);
             if (allowedIds.length === 0) {
                 return res.status(403).json({ success: false, message: 'Access denied to this site.' });
             }
 
-            const totalAmount = (parseFloat(entry.quantity) * parseFloat(entry.rate))
-                + parseFloat(entry.additional_charges || 0);
-            await entry.update({ credit_entry: totalAmount, debit_entry: 0, updated_at: new Date() });
-            res.status(200).json({ success: true, message: 'Material entry marked as paid' });
+            const totalAmount = parseFloat(invoice.credit_entry || 0) + parseFloat(invoice.debit_entry || 0);
+            await invoice.update({ credit_entry: totalAmount, debit_entry: 0, updated_at: new Date() });
+            res.status(200).json({ success: true, message: 'Material invoice marked as paid' });
         } catch (err) {
             console.error('Mark material paid error:', err);
-            res.status(500).json({ success: false, message: 'Failed to update entry', error: err.message });
+            res.status(500).json({ success: false, message: 'Failed to update invoice', error: err.message });
         }
     },
 
     markLabourEntryPaid: async (req, res) => {
         try {
             const { entry_id } = req.params;
-            // ── Only approved entries can be marked paid ──
-            const entry = await LabourEntry.findOne({
+            // ── Only approved invoices can be marked paid ──
+            const invoice = await LabourInvoice.findOne({
                 where: { id: entry_id, approval_status: 'approved' },
             });
-            if (!entry) return res.status(404).json({ success: false, message: 'Entry not found or not yet approved' });
+            if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found or not yet approved' });
 
-            const allowedIds = await resolveAllowedSiteIds(req.user, entry.site_id);
+            const allowedIds = await resolveAllowedSiteIds(req.user, invoice.site_id);
             if (allowedIds.length === 0) {
                 return res.status(403).json({ success: false, message: 'Access denied to this site.' });
             }
 
-            const totalAmount = parseFloat(entry.no_of_workers) * parseFloat(entry.rate_per_worker);
-            await entry.update({ credit_entry: totalAmount, debit_entry: 0, updated_at: new Date() });
-            res.status(200).json({ success: true, message: 'Labour entry marked as paid' });
+            const totalAmount = parseFloat(invoice.credit_entry || 0) + parseFloat(invoice.debit_entry || 0);
+            await invoice.update({ credit_entry: totalAmount, debit_entry: 0, updated_at: new Date() });
+            res.status(200).json({ success: true, message: 'Labour invoice marked as paid' });
         } catch (err) {
             console.error('Mark labour paid error:', err);
-            res.status(500).json({ success: false, message: 'Failed to update entry', error: err.message });
+            res.status(500).json({ success: false, message: 'Failed to update invoice', error: err.message });
         }
     },
 
@@ -304,15 +301,15 @@ const actionController = {
             });
             const totalBudget = parseFloat(totalBudgetResult?.total || 0);
 
-            const materialExpenseResult = await MaterialEntry.findOne({
+            const materialExpenseResult = await MaterialInvoice.findOne({
                 attributes: [[fn('COALESCE', fn('SUM', col('credit_entry')), 0), 'total']],
                 where:      { status: 1, ...dateFilter, ...siteFilter },
                 raw:        true,
             });
             const materialExpense = parseFloat(materialExpenseResult?.total || 0);
 
-            // ── Only approved labour entries count toward expense stats ──
-            const labourExpenseResult = await LabourEntry.findOne({
+            // ── Only approved labour invoices count toward expense stats ──
+            const labourExpenseResult = await LabourInvoice.findOne({
                 attributes: [[fn('COALESCE', fn('SUM', col('credit_entry')), 0), 'total']],
                 where:      { status: 1, approval_status: 'approved', ...dateFilter, ...siteFilter },
                 raw:        true,
@@ -356,13 +353,13 @@ const actionController = {
                 };
 
                 const [prevMat, prevLab, prevPay] = await Promise.all([
-                    MaterialEntry.findOne({
+                    MaterialInvoice.findOne({
                         attributes: [[fn('COALESCE', fn('SUM', col('credit_entry')), 0), 'total']],
                         where: { status: 1, ...prevDateFilter, ...siteFilter },
                         raw:   true,
                     }),
                     // ── approved only for previous period too ──
-                    LabourEntry.findOne({
+                    LabourInvoice.findOne({
                         attributes: [[fn('COALESCE', fn('SUM', col('credit_entry')), 0), 'total']],
                         where: { status: 1, approval_status: 'approved', ...prevDateFilter, ...siteFilter },
                         raw:   true,
@@ -462,71 +459,70 @@ const actionController = {
             const transactions = [];
 
             if (!type || type === 'material') {
-                const materialEntries = await MaterialEntry.findAll({
+                const materialInvoices = await MaterialInvoice.findAll({
                     where:   { status: 1, ...dateFilter, ...siteFilter },
                     include: [
-                        { model: Site,     attributes: ['name'], as: 'site'                    },
-                        { model: Material, attributes: ['name'], as: 'material'                },
-                        { model: Vendor,   attributes: ['name'], as: 'vendor', required: false },
+                        { model: Site,   attributes: ['name'], as: 'site'                    },
+                        { model: Vendor, attributes: ['name'], as: 'vendor', required: false },
                     ],
                     order: [['date', 'DESC']],
                     raw:   true,
                     nest:  true,
                 });
-                materialEntries.forEach(entry => {
-                    const baseAmount    = (parseFloat(entry.quantity || 0) * parseFloat(entry.rate || 0)) + parseFloat(entry.additional_charges || 0);
-                    const paidAmount    = parseFloat(entry.credit_entry || 0);
-                    const pendingAmount = parseFloat(entry.debit_entry  || 0);
+                materialInvoices.forEach(inv => {
+                    const paidAmount    = parseFloat(inv.credit_entry || 0);
+                    const pendingAmount = parseFloat(inv.debit_entry  || 0);
+                    const totalAmount   = paidAmount + pendingAmount;
                     transactions.push({
-                        id:                 `M-${entry.id}`,
-                        date:               entry.date,
+                        id:                 `M-${inv.id}`,
+                        date:               inv.date,
                         transaction_type:   'Material',
                         entry_type:         null,
-                        site_name:          entry.site?.name     || 'N/A',
-                        item_name:          entry.material?.name || 'N/A',
-                        quantity:           parseFloat(entry.quantity           || 0),
-                        rate:               parseFloat(entry.rate               || 0),
+                        site_name:          inv.site?.name   || 'N/A',
+                        item_name:          inv.invoice_number || `Invoice #${inv.id}`,
+                        quantity:           0,
+                        rate:               0,
                         amount:             paidAmount,
-                        vendor_name:        entry.vendor?.name   || null,
-                        additional_charges: parseFloat(entry.additional_charges || 0),
-                        original_id:        entry.id,
-                        created_at:         entry.created_at,
+                        vendor_name:        inv.vendor?.name || null,
+                        additional_charges: parseFloat(inv.additional_charges || 0),
+                        original_id:        inv.id,
+                        created_at:         inv.created_at,
                         debit_entry:        pendingAmount,
-                        total_amount:       baseAmount,
+                        total_amount:       totalAmount,
                     });
                 });
             }
 
             if (!type || type === 'labour') {
-                // ── Only approved labour entries appear in transactions ──
-                const labourEntries = await LabourEntry.findAll({
+                // ── Only approved labour invoices appear in transactions ──
+                const labourInvs = await LabourInvoice.findAll({
                     where:   { status: 1, approval_status: 'approved', ...dateFilter, ...siteFilter },
                     include: [
                         { model: Site,   attributes: ['name'], as: 'site'   },
-                        { model: Labour, attributes: ['name'], as: 'labour' },
+                        { model: Vendor, attributes: ['name'], as: 'vendor', required: false },
                     ],
                     order: [['date', 'DESC']],
                     raw:   true,
                     nest:  true,
                 });
-                labourEntries.forEach(entry => {
-                    const totalAmount   = parseFloat(entry.no_of_workers || 0) * parseFloat(entry.rate_per_worker || 0);
-                    const paidAmount    = parseFloat(entry.credit_entry || 0);
-                    const pendingAmount = parseFloat(entry.debit_entry  || 0);
+                labourInvs.forEach(inv => {
+                    const paidAmount    = parseFloat(inv.credit_entry || 0);
+                    const pendingAmount = parseFloat(inv.debit_entry  || 0);
+                    const totalAmount   = paidAmount + pendingAmount;
                     transactions.push({
-                        id:                 `L-${entry.id}`,
-                        date:               entry.date,
+                        id:                 `L-${inv.id}`,
+                        date:               inv.date,
                         transaction_type:   'Labour',
                         entry_type:         null,
-                        site_name:          entry.site?.name   || 'N/A',
-                        item_name:          entry.labour?.name || 'N/A',
-                        quantity:           parseFloat(entry.no_of_workers   || 0),
-                        rate:               parseFloat(entry.rate_per_worker || 0),
+                        site_name:          inv.site?.name   || 'N/A',
+                        item_name:          inv.invoice_number || `Invoice #${inv.id}`,
+                        quantity:           0,
+                        rate:               0,
                         amount:             paidAmount,
-                        vendor_name:        null,
+                        vendor_name:        inv.vendor?.name || null,
                         additional_charges: 0,
-                        original_id:        entry.id,
-                        created_at:         entry.created_at,
+                        original_id:        inv.id,
+                        created_at:         inv.created_at,
                         debit_entry:        pendingAmount,
                         total_amount:       totalAmount,
                     });
@@ -561,35 +557,34 @@ const actionController = {
             }
             const siteFilter = { site_id: { [Op.in]: allowedIds } };
 
-            const materialPending = await MaterialEntry.findAll({
+            const materialPending = await MaterialInvoice.findAll({
                 where: { status: 1, debit_entry: { [Op.gt]: 0 }, ...dateFilter, ...siteFilter },
                 include: [
-                    { model: Site,     attributes: ['name'], as: 'site'                    },
-                    { model: Material, attributes: ['name'], as: 'material'                },
-                    { model: Vendor,   attributes: ['name'], as: 'vendor', required: false },
+                    { model: Site,   attributes: ['name'], as: 'site'                    },
+                    { model: Vendor, attributes: ['name'], as: 'vendor', required: false },
                 ],
                 order: [['date', 'DESC']],
                 raw:   true,
                 nest:  true,
             });
 
-            const pendingData = materialPending.map(entry => {
-                const totalAmount   = (parseFloat(entry.quantity || 0) * parseFloat(entry.rate || 0)) + parseFloat(entry.additional_charges || 0);
-                const paidAmount    = parseFloat(entry.credit_entry || 0);
-                const pendingAmount = parseFloat(entry.debit_entry  || 0);
+            const pendingData = materialPending.map(inv => {
+                const paidAmount    = parseFloat(inv.credit_entry || 0);
+                const pendingAmount = parseFloat(inv.debit_entry  || 0);
+                const totalAmount   = paidAmount + pendingAmount;
                 return {
-                    id:                 entry.id,
-                    date:               entry.date,
-                    site_name:          entry.site?.name     || 'N/A',
-                    material_name:      entry.material?.name || 'N/A',
-                    vendor_name:        entry.vendor?.name   || 'N/A',
-                    quantity:           parseFloat(entry.quantity           || 0),
-                    rate:               parseFloat(entry.rate               || 0),
+                    id:                 inv.id,
+                    date:               inv.date,
+                    site_name:          inv.site?.name   || 'N/A',
+                    material_name:      inv.invoice_number || `Invoice #${inv.id}`,
+                    vendor_name:        inv.vendor?.name || 'N/A',
+                    quantity:           0,
+                    rate:               0,
                     total_amount:       totalAmount,
                     paid_amount:        paidAmount,
                     pending_amount:     pendingAmount,
-                    additional_charges: parseFloat(entry.additional_charges || 0),
-                    created_at:         entry.created_at,
+                    additional_charges: parseFloat(inv.additional_charges || 0),
+                    created_at:         inv.created_at,
                 };
             });
 
@@ -622,8 +617,8 @@ const actionController = {
             }
             const siteFilter = { site_id: { [Op.in]: allowedIds } };
 
-            // ── Only approved labour entries with outstanding debit ──
-            const labourPending = await LabourEntry.findAll({
+            // ── Only approved labour invoices with outstanding debit ──
+            const labourPending = await LabourInvoice.findAll({
                 where: {
                     status:          1,
                     approval_status: 'approved',
@@ -633,28 +628,29 @@ const actionController = {
                 },
                 include: [
                     { model: Site,   attributes: ['name'], as: 'site'   },
-                    { model: Labour, attributes: ['name'], as: 'labour' },
+                    { model: Vendor, attributes: ['name'], as: 'vendor', required: false },
                 ],
                 order: [['date', 'DESC']],
                 raw:   true,
                 nest:  true,
             });
 
-            const pendingData = labourPending.map(entry => {
-                const totalAmount   = parseFloat(entry.no_of_workers || 0) * parseFloat(entry.rate_per_worker || 0);
-                const paidAmount    = parseFloat(entry.credit_entry || 0);
-                const pendingAmount = parseFloat(entry.debit_entry  || 0);
+            const pendingData = labourPending.map(inv => {
+                const paidAmount    = parseFloat(inv.credit_entry || 0);
+                const pendingAmount = parseFloat(inv.debit_entry  || 0);
+                const totalAmount   = paidAmount + pendingAmount;
                 return {
-                    id:              entry.id,
-                    date:            entry.date,
-                    site_name:       entry.site?.name   || 'N/A',
-                    labour_name:     entry.labour?.name || 'N/A',
-                    no_of_workers:   parseFloat(entry.no_of_workers   || 0),
-                    rate_per_worker: parseFloat(entry.rate_per_worker || 0),
+                    id:              inv.id,
+                    date:            inv.date,
+                    site_name:       inv.site?.name   || 'N/A',
+                    labour_name:     inv.invoice_number || `Invoice #${inv.id}`,
+                    vendor_name:     inv.vendor?.name || 'N/A',
+                    no_of_workers:   0,
+                    rate_per_worker: 0,
                     total_amount:    totalAmount,
                     paid_amount:     paidAmount,
                     pending_amount:  pendingAmount,
-                    created_at:      entry.created_at,
+                    created_at:      inv.created_at,
                 };
             });
 
