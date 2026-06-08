@@ -42,6 +42,10 @@ function MaterialInvoice() {
     const [invoicePreview, setInvoicePreview] = useState(null)
     const [invoiceRemoved, setInvoiceRemoved] = useState(false)
 
+    // Item breakdown toggle
+    const [useItemBreakdown, setUseItemBreakdown] = useState(false)
+    const [manualTotalAmount, setManualTotalAmount] = useState("")
+
     // Typing animation
     const [placeholder, setPlaceholder] = useState("Search by site or vendor...")
     const [currentWordIndex, setCurrentWordIndex] = useState(0)
@@ -224,9 +228,12 @@ function MaterialInvoice() {
 
     // Calculate total amount
     const totalAmount = useMemo(() => {
+        if (!useItemBreakdown) {
+            return parseFloat(manualTotalAmount) || 0
+        }
         const additionalCharges = Number(formData.additional_charges) || 0
         return itemsTotal + additionalCharges
-    }, [itemsTotal, formData.additional_charges])
+    }, [itemsTotal, formData.additional_charges, useItemBreakdown, manualTotalAmount])
 
     // Auto-calculate debit/credit
     useEffect(() => {
@@ -277,7 +284,6 @@ function MaterialInvoice() {
             updated[index] = { ...updated[index], [field]: value }
             return updated
         })
-        // Reset debit/credit when items change
         setFormData(prev => ({ ...prev, debit_entry: "", credit_entry: "" }))
     }
 
@@ -503,6 +509,8 @@ function MaterialInvoice() {
             invoice_photo: null,
         })
         setItems([{ ...emptyItem }])
+        setUseItemBreakdown(false)
+        setManualTotalAmount("")
         setInvoicePreview(null)
         setInvoiceRemoved(false)
         setBackendErrors({})
@@ -527,16 +535,26 @@ function MaterialInvoice() {
             status: entry.status === 1 ? 1 : 0,
             invoice_photo: null,
         })
-        // Populate items from entry
-        if (entry.items && entry.items.length > 0) {
+
+        const hasItems = entry.items && entry.items.length > 0
+        setUseItemBreakdown(hasItems)
+
+        if (hasItems) {
+            setManualTotalAmount("")
             setItems(entry.items.map(item => ({
                 material_id: item.material_id || "",
                 quantity: item.quantity || "",
                 rate: item.rate || "",
             })))
         } else {
+            // items இல்லாத போது debit+credit sum = total
+            const existingTotal = (
+                parseFloat(entry.debit_entry || 0) + parseFloat(entry.credit_entry || 0)
+            ).toFixed(2)
+            setManualTotalAmount(existingTotal !== "0.00" ? existingTotal : "")
             setItems([{ ...emptyItem }])
         }
+
         setInvoicePreview(
             entry.invoice_photo
                 ? `/uploads/material-invoices/${entry.invoice_photo}`
@@ -558,8 +576,17 @@ function MaterialInvoice() {
                 }
             })
 
-            // Append items as JSON string
-            payload.append("items", JSON.stringify(items))
+            // items breakdown on இருந்தால் items append, இல்லாவிட்டால் empty
+            if (useItemBreakdown && items.some(i => i.material_id)) {
+                payload.append("items", JSON.stringify(items))
+            } else {
+                payload.append("items", JSON.stringify([]))
+            }
+
+            // manual total amount — breakdown off இருந்தால் append
+            if (!useItemBreakdown) {
+                payload.append("manual_total_amount", manualTotalAmount || "0")
+            }
 
             if (formData.invoice_photo) {
                 payload.append("invoice_photo", formData.invoice_photo)
@@ -633,6 +660,8 @@ function MaterialInvoice() {
             invoice_photo: null,
         })
         setItems([{ ...emptyItem }])
+        setUseItemBreakdown(false)
+        setManualTotalAmount("")
         setInvoicePreview(null)
         setInvoiceRemoved(false)
         setBackendErrors({})
@@ -760,6 +789,10 @@ function MaterialInvoice() {
                         return sum + (parseFloat(item.quantity) || 0) * (parseFloat(item.rate) || 0)
                     }, 0)
                     const additional = parseFloat(params.data.additional_charges) || 0
+                    // items இல்லாத போது debit+credit = total
+                    if (items.length === 0) {
+                        return (parseFloat(params.data.debit_entry || 0) + parseFloat(params.data.credit_entry || 0)).toFixed(2)
+                    }
                     return (itemsTotal + additional).toFixed(2)
                 },
                 valueFormatter: (params) => `₹${Number(params.value).toFixed(2)}`,
@@ -900,133 +933,212 @@ function MaterialInvoice() {
                     </ThemeUI.FormField>
                 </div>
 
-                {/* Items Table */}
-                <div>
-                    <div className="flex items-center justify-between mb-2">
-                        <label className="block text-sm font-medium text-gray-700">
-                            Invoice Items <span className="text-red-500">*</span>
-                        </label>
-                        <button
-                            type="button"
-                            onClick={addItem}
-                            className="flex items-center gap-1 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
-                            style={{ color: theme.primaryGradientStart, backgroundColor: `${theme.primaryGradientStart}15` }}
-                        >
-                            <Plus size={14} /> Add Item
-                        </button>
+                {/* Item Breakdown Toggle */}
+                <div
+                    className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer select-none"
+                    style={{
+                        backgroundColor: useItemBreakdown ? `${theme.primaryGradientStart}10` : '#f8fafc',
+                        borderColor: useItemBreakdown ? theme.primaryGradientStart : '#e2e8f0'
+                    }}
+                    onClick={() => {
+                        const next = !useItemBreakdown
+                        setUseItemBreakdown(next)
+                        if (!next) {
+                            setItems([{ ...emptyItem }])
+                        } else {
+                            setManualTotalAmount("")
+                        }
+                        setFormData(prev => ({ ...prev, debit_entry: "", credit_entry: "" }))
+                    }}
+                >
+                    <div
+                        className="w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors"
+                        style={{
+                            backgroundColor: useItemBreakdown ? theme.primaryGradientStart : 'white',
+                            borderColor: useItemBreakdown ? theme.primaryGradientStart : '#cbd5e1'
+                        }}
+                    >
+                        {useItemBreakdown && (
+                            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                        )}
                     </div>
-
-                    {backendErrors.items && (
-                        <div className="text-red-500 text-xs mb-2">{backendErrors.items}</div>
-                    )}
-
-                    <div className="border border-gray-200 rounded-lg overflow-hidden">
-                        <table className="w-full text-sm">
-                            <thead>
-                                <tr className="bg-gray-50 border-b border-gray-200">
-                                    <th className="px-3 py-2 text-left font-medium text-gray-600">#</th>
-                                    <th className="px-3 py-2 text-left font-medium text-gray-600">Material *</th>
-                                    <th className="px-3 py-2 text-left font-medium text-gray-600">Quantity *</th>
-                                    <th className="px-3 py-2 text-left font-medium text-gray-600">Rate (₹) *</th>
-                                    <th className="px-3 py-2 text-right font-medium text-gray-600">Line Total</th>
-                                    <th className="px-3 py-2 text-center font-medium text-gray-600 w-12"></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {items.map((item, index) => {
-                                    const lineTotal = (Number(item.quantity) || 0) * (Number(item.rate) || 0)
-                                    return (
-                                        <tr key={index} className="border-b border-gray-100 last:border-b-0">
-                                            <td className="px-3 py-2 text-gray-500">{index + 1}</td>
-                                            <td className="px-3 py-2" style={{ minWidth: 200 }}>
-                                                <ThemeUI.Select
-                                                    value={item.material_id}
-                                                    onChange={(selected) => handleItemMaterialChange(index, selected)}
-                                                    options={materials.map(m => ({
-                                                        value: m.id,
-                                                        label: `${m.name} (${m.unit?.name || '-'})`
-                                                    }))}
-                                                    placeholder="Select material"
-                                                    menuPortalTarget={document.body}
-                                                />
-                                            </td>
-                                            <td className="px-3 py-2" style={{ minWidth: 120 }}>
-                                                <ThemeUI.Input
-                                                    type="number"
-                                                    step="0.001"
-                                                    min="0"
-                                                    value={item.quantity}
-                                                    onChange={(e) => handleItemChange(index, 'quantity', e.target.value)}
-                                                    placeholder="0.000"
-                                                />
-                                            </td>
-                                            <td className="px-3 py-2" style={{ minWidth: 120 }}>
-                                                <ThemeUI.Input
-                                                    type="number"
-                                                    step="0.01"
-                                                    min="0"
-                                                    value={item.rate}
-                                                    onChange={(e) => handleItemChange(index, 'rate', e.target.value)}
-                                                    placeholder="0.00"
-                                                />
-                                            </td>
-                                            <td className="px-3 py-2 text-right font-medium">
-                                                ₹{lineTotal.toFixed(2)}
-                                            </td>
-                                            <td className="px-3 py-2 text-center">
-                                                {items.length > 1 && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => removeItem(index)}
-                                                        className="p-1 text-red-500 hover:text-red-700 transition-colors"
-                                                        title="Remove item"
-                                                    >
-                                                        <X size={16} />
-                                                    </button>
-                                                )}
-                                            </td>
-                                        </tr>
-                                    )
-                                })}
-                            </tbody>
-                            <tfoot>
-                                <tr className="bg-gray-50 border-t border-gray-200">
-                                    <td colSpan={4} className="px-3 py-2 text-right font-medium text-gray-700">
-                                        Items Total:
-                                    </td>
-                                    <td className="px-3 py-2 text-right font-semibold">
-                                        ₹{itemsTotal.toFixed(2)}
-                                    </td>
-                                    <td></td>
-                                </tr>
-                            </tfoot>
-                        </table>
+                    <div>
+                        <div className="text-sm font-medium text-gray-800">
+                            Add item-wise breakdown
+                        </div>
+                        <div className="text-xs text-gray-500 mt-0.5">
+                            {useItemBreakdown
+                                ? "Material-wise quantity & rate enter பண்ணலாம் — total auto-calculate ஆகும்"
+                                : "Tick செய்யாவிட்டால் invoice total amount நேரடியாக enter பண்ணலாம்"
+                            }
+                        </div>
                     </div>
                 </div>
 
+                {/* Manual Total Amount — breakdown off இருந்தால் காட்டு */}
+                {!useItemBreakdown && (
+                    <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <ThemeUI.FormField
+                            label="Invoice Total Amount (₹)"
+                            name="manual_total_amount"
+                            error={backendErrors.manual_total_amount}
+                            required
+                        >
+                            <ThemeUI.Input
+                                name="manual_total_amount"
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={manualTotalAmount}
+                                onChange={(e) => {
+                                    setManualTotalAmount(e.target.value)
+                                    setFormData(prev => ({ ...prev, debit_entry: "", credit_entry: "" }))
+                                    setBackendErrors(prev => ({ ...prev, manual_total_amount: "" }))
+                                }}
+                                placeholder="0.00"
+                                error={backendErrors.manual_total_amount}
+                            />
+                        </ThemeUI.FormField>
+                    </div>
+                )}
+
+                {/* Items Table — breakdown on இருந்தால் மட்டும் காட்டு */}
+                {useItemBreakdown && (
+                    <div>
+                        <div className="flex items-center justify-between mb-2">
+                            <label className="block text-sm font-medium text-gray-700">
+                                Invoice Items <span className="text-red-500">*</span>
+                            </label>
+                            <button
+                                type="button"
+                                onClick={addItem}
+                                className="flex items-center gap-1 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
+                                style={{ color: theme.primaryGradientStart, backgroundColor: `${theme.primaryGradientStart}15` }}
+                            >
+                                <Plus size={14} /> Add Item
+                            </button>
+                        </div>
+
+                        {backendErrors.items && (
+                            <div className="text-red-500 text-xs mb-2">{backendErrors.items}</div>
+                        )}
+
+                        <div className="border border-gray-200 rounded-lg overflow-hidden">
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="bg-gray-50 border-b border-gray-200">
+                                        <th className="px-3 py-2 text-left font-medium text-gray-600">#</th>
+                                        <th className="px-3 py-2 text-left font-medium text-gray-600">Material *</th>
+                                        <th className="px-3 py-2 text-left font-medium text-gray-600">Quantity *</th>
+                                        <th className="px-3 py-2 text-left font-medium text-gray-600">Rate (₹) *</th>
+                                        <th className="px-3 py-2 text-right font-medium text-gray-600">Line Total</th>
+                                        <th className="px-3 py-2 text-center font-medium text-gray-600 w-12"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {items.map((item, index) => {
+                                        const lineTotal = (Number(item.quantity) || 0) * (Number(item.rate) || 0)
+                                        return (
+                                            <tr key={index} className="border-b border-gray-100 last:border-b-0">
+                                                <td className="px-3 py-2 text-gray-500">{index + 1}</td>
+                                                <td className="px-3 py-2" style={{ minWidth: 200 }}>
+                                                    <ThemeUI.Select
+                                                        value={item.material_id}
+                                                        onChange={(selected) => handleItemMaterialChange(index, selected)}
+                                                        options={materials.map(m => ({
+                                                            value: m.id,
+                                                            label: `${m.name} (${m.unit?.name || '-'})`
+                                                        }))}
+                                                        placeholder="Select material"
+                                                        menuPortalTarget={document.body}
+                                                    />
+                                                </td>
+                                                <td className="px-3 py-2" style={{ minWidth: 120 }}>
+                                                    <ThemeUI.Input
+                                                        type="number"
+                                                        step="0.001"
+                                                        min="0"
+                                                        value={item.quantity}
+                                                        onChange={(e) => handleItemChange(index, 'quantity', e.target.value)}
+                                                        placeholder="0.000"
+                                                    />
+                                                </td>
+                                                <td className="px-3 py-2" style={{ minWidth: 120 }}>
+                                                    <ThemeUI.Input
+                                                        type="number"
+                                                        step="0.01"
+                                                        min="0"
+                                                        value={item.rate}
+                                                        onChange={(e) => handleItemChange(index, 'rate', e.target.value)}
+                                                        placeholder="0.00"
+                                                    />
+                                                </td>
+                                                <td className="px-3 py-2 text-right font-medium">
+                                                    ₹{lineTotal.toFixed(2)}
+                                                </td>
+                                                <td className="px-3 py-2 text-center">
+                                                    {items.length > 1 && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => removeItem(index)}
+                                                            className="p-1 text-red-500 hover:text-red-700 transition-colors"
+                                                            title="Remove item"
+                                                        >
+                                                            <X size={16} />
+                                                        </button>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        )
+                                    })}
+                                </tbody>
+                                <tfoot>
+                                    <tr className="bg-gray-50 border-t border-gray-200">
+                                        <td colSpan={4} className="px-3 py-2 text-right font-medium text-gray-700">
+                                            Items Total:
+                                        </td>
+                                        <td className="px-3 py-2 text-right font-semibold">
+                                            ₹{itemsTotal.toFixed(2)}
+                                        </td>
+                                        <td></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+                )}
+
                 {/* Charges & Payment */}
                 <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-4">
-                    <ThemeUI.FormField label="Additional Charges (₹)" name="additional_charges" error={backendErrors.additional_charges}>
-                        <ThemeUI.Input
-                            name="additional_charges"
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={formData.additional_charges}
-                            onChange={handleAdditionalChargesChange}
-                            placeholder="0.00"
-                            error={backendErrors.additional_charges}
-                        />
-                    </ThemeUI.FormField>
+                    {/* Additional charges — breakdown mode-ல் மட்டும் காட்டு */}
+                    {useItemBreakdown && (
+                        <ThemeUI.FormField label="Additional Charges (₹)" name="additional_charges" error={backendErrors.additional_charges}>
+                            <ThemeUI.Input
+                                name="additional_charges"
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={formData.additional_charges}
+                                onChange={handleAdditionalChargesChange}
+                                placeholder="0.00"
+                                error={backendErrors.additional_charges}
+                            />
+                        </ThemeUI.FormField>
+                    )}
 
-                    <ThemeUI.FormField label="Total Amount (₹)">
-                        <ThemeUI.Input
-                            value={`₹${totalAmount.toFixed(2)}`}
-                            readOnly
-                            disabled
-                            className="bg-gray-100 cursor-not-allowed font-semibold"
-                        />
-                    </ThemeUI.FormField>
+                    {/* Total Amount — breakdown mode-ல் readonly show, manual mode-ல் hide (already shown above) */}
+                    {useItemBreakdown && (
+                        <ThemeUI.FormField label="Total Amount (₹)">
+                            <ThemeUI.Input
+                                value={`₹${totalAmount.toFixed(2)}`}
+                                readOnly
+                                disabled
+                                className="bg-gray-100 cursor-not-allowed font-semibold"
+                            />
+                        </ThemeUI.FormField>
+                    )}
 
                     <div>
                         <div className="flex items-center justify-between mb-1.5">
@@ -1171,18 +1283,22 @@ function MaterialInvoice() {
                     <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
                         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                             <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-                                <div className="flex items-center gap-2">
-                                    <span className="text-slate-500">Items Total:</span>
-                                    <span className="font-semibold text-slate-900">
-                                        ₹{itemsTotal.toFixed(2)}
-                                    </span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <span className="text-slate-500">+ Charges:</span>
-                                    <span className="font-semibold text-slate-900">
-                                        ₹{Number(formData.additional_charges || 0).toFixed(2)}
-                                    </span>
-                                </div>
+                                {useItemBreakdown && (
+                                    <>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-slate-500">Items Total:</span>
+                                            <span className="font-semibold text-slate-900">
+                                                ₹{itemsTotal.toFixed(2)}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-slate-500">+ Charges:</span>
+                                            <span className="font-semibold text-slate-900">
+                                                ₹{Number(formData.additional_charges || 0).toFixed(2)}
+                                            </span>
+                                        </div>
+                                    </>
+                                )}
                                 <div className="flex items-center gap-2">
                                     <span className="text-slate-500">Total:</span>
                                     <span className="font-semibold text-blue-700">
