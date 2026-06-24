@@ -63,7 +63,6 @@ function MaterialInvoice() {
         site_id: "",
         vendor_id: "",
         date: "",
-        invoice_number: "",
         additional_charges: "0",
         debit_entry: "",
         credit_entry: "",
@@ -500,7 +499,6 @@ function MaterialInvoice() {
             site_id: "",
             vendor_id: "",
             date: "",
-            invoice_number: "",
             additional_charges: "0",
             debit_entry: "",
             credit_entry: "",
@@ -527,7 +525,6 @@ function MaterialInvoice() {
             site_id: entry.site_id || "",
             vendor_id: entry.vendor_id || "",
             date: entry.date ? entry.date.split('T')[0] : "",
-            invoice_number: entry.invoice_number || "",
             additional_charges: entry.additional_charges || "0",
             debit_entry: entry.debit_entry || "",
             credit_entry: entry.credit_entry || "",
@@ -651,7 +648,6 @@ function MaterialInvoice() {
             site_id: "",
             vendor_id: "",
             date: "",
-            invoice_number: "",
             additional_charges: "0",
             debit_entry: "",
             credit_entry: "",
@@ -755,7 +751,7 @@ function MaterialInvoice() {
             {
                 headerName: "Invoice #",
                 field: "invoice_number",
-                width: 130,
+                width: 150,                      // widen slightly — new format is longer
                 valueGetter: (params) => params.data.invoice_number || "—",
             },
             {
@@ -918,17 +914,6 @@ function MaterialInvoice() {
                             onChange={handleInputChange}
                             error={backendErrors.date}
                             max={new Date().toISOString().split('T')[0]}
-                        />
-                    </ThemeUI.FormField>
-
-                    <ThemeUI.FormField label="Invoice Number" name="invoice_number" error={backendErrors.invoice_number}>
-                        <ThemeUI.Input
-                            name="invoice_number"
-                            type="text"
-                            value={formData.invoice_number}
-                            onChange={handleInputChange}
-                            placeholder="e.g. INV-001"
-                            error={backendErrors.invoice_number}
                         />
                     </ThemeUI.FormField>
                 </div>
@@ -1143,7 +1128,7 @@ function MaterialInvoice() {
                     <div>
                         <div className="flex items-center justify-between mb-1.5">
                             <label className="block text-sm font-medium text-gray-700">
-                                Paid ₹ <span className="text-red-500">*</span>
+                                Paid ₹ 
                             </label>
                             <ThemeUI.Checkbox
                                 id="paid_checkbox"
@@ -1189,7 +1174,7 @@ function MaterialInvoice() {
                     <div>
                         <div className="flex items-center justify-between mb-1.5">
                             <label className="block text-sm font-medium text-gray-700">
-                                Due ₹ <span className="text-red-500">*</span>
+                                Due ₹ 
                             </label>
                             <ThemeUI.Checkbox
                                 id="due_checkbox"
@@ -1318,13 +1303,9 @@ function MaterialInvoice() {
                                     </span>
                                 </div>
                             </div>
-                            {Math.abs(
-                                (Number(formData.debit_entry || 0) + Number(formData.credit_entry || 0)) -
-                                totalAmount
-                            ) > 0.01 && (
-                                <div className="flex items-center gap-2 text-xs text-red-700 bg-red-100 px-3 py-1.5 rounded-full">
-                                    Amount mismatch
-                                </div>
+                           {(Number(formData.debit_entry || 0) + Number(formData.credit_entry || 0)) >
+                                totalAmount + 0.01 && (
+                                <div className="...">Paid + Due exceeds total amount</div>
                             )}
                         </div>
                     </div>

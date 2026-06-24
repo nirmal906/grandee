@@ -181,6 +181,106 @@ const vendorSummaryController = {
     },
 
     // ─────────────────────────────────────────────
+    // POST /api/vendor-summary/:vendorId/payment
+    // Records a payment (credit_entry update) against one invoice
+    // Body: { invoice_id, invoice_type, payment_amount }
+    //   invoice_type: 'material' | 'labour'
+    //   payment_amount: positive number
+    // ─────────────────────────────────────────────
+    recordVendorPayment: async (req, res) => {
+        const t = await Vendor.sequelize.transaction();
+        try {
+            const { vendorId } = req.params;
+            const { invoice_id, invoice_type, payment_amount } = req.body;
+
+            if (!invoice_id || !invoice_type || !payment_amount) {
+                await t.rollback();
+                return res.status(400).json({ success: false, message: 'invoice_id, invoice_type, and payment_amount are required' });
+            }
+
+            const amount = parseFloat(payment_amount);
+            if (isNaN(amount) || amount <= 0) {
+                await t.rollback();
+                return res.status(400).json({ success: false, message: 'payment_amount must be a positive number' });
+            }
+
+            const Model = invoice_type === 'labour' ? LabourInvoice : MaterialInvoice;
+
+            const invoice = await Model.findOne({
+                where: { id: invoice_id, vendor_id: vendorId },
+                transaction: t,
+                lock: t.LOCK.UPDATE,
+            });
+
+            if (!invoice) {
+                await t.rollback();
+                return res.status(404).json({ success: false, message: 'Invoice not found for this vendor' });
+            }
+
+            const currentDebit  = parseFloat(invoice.debit_entry  || 0);
+            const currentCredit = parseFloat(invoice.credit_entry || 0);
+
+            if (amount > currentDebit + 0.01) {
+                await t.rollback();
+                return res.status(400).json({
+                    success: false,
+                    message: `Payment amount (₹${amount.toFixed(2)}) exceeds outstanding balance (₹${currentDebit.toFixed(2)})`
+                });
+            }
+
+            const newDebit  = parseFloat((currentDebit  - amount).toFixed(2));
+            const newCredit = parseFloat((currentCredit + amount).toFixed(2));
+
+            await invoice.update(
+                { debit_entry: newDebit, credit_entry: newCredit, updated_by: req.user?.userId ?? req.user?.id },
+                { transaction: t }
+            );
+
+            await t.commit();
+            res.status(200).json({
+                success: true,
+                message: `Payment of ₹${amount.toFixed(2)} recorded successfully`,
+                data: { invoice_id, new_debit: newDebit, new_credit: newCredit }
+            });
+        } catch (err) {
+            await t.rollback();
+            console.error('recordVendorPayment error:', err);
+            res.status(500).json({ success: false, message: 'Something went wrong. Please try again later!' });
+        }
+    },
+
+    // GET /api/vendor-summary/:vendorId/pending-invoices
+    getPendingInvoicesByVendor: async (req, res) => {
+        try {
+            const { vendorId } = req.params;
+
+            const matInvoices = await MaterialInvoice.findAll({
+                where: { vendor_id: vendorId, status: 1, debit_entry: { [Op.gt]: 0 } },
+                include: [{ model: Site, as: 'site', attributes: ['id', 'name'] }],
+                attributes: ['id', 'invoice_number', 'date', 'debit_entry', 'credit_entry', 'site_id'],
+                order: [['date', 'DESC']],
+            });
+
+            const labInvoices = await LabourInvoice.findAll({
+                where: { vendor_id: vendorId, status: 1, approval_status: 'approved', debit_entry: { [Op.gt]: 0 } },
+                include: [{ model: Site, as: 'site', attributes: ['id', 'name'] }],
+                attributes: ['id', 'invoice_number', 'date', 'debit_entry', 'credit_entry', 'site_id'],
+                order: [['date', 'DESC']],
+            });
+
+            const combined = [
+                ...matInvoices.map(inv => ({ ...inv.toJSON(), type: 'material', typelabel: 'Material' })),
+                ...labInvoices.map(inv => ({ ...inv.toJSON(), type: 'labour',   typelabel: 'Labour'   })),
+            ].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+            res.status(200).json({ success: true, data: combined });
+        } catch (err) {
+            console.error('getPendingInvoicesByVendor error:', err);
+            res.status(500).json({ success: false, message: 'Something went wrong.' });
+        }
+    },
+
+    // ─────────────────────────────────────────────
     // GET vendor + site invoices — list all invoices
     // ─────────────────────────────────────────────
     getVendorSiteInvoices: async (req, res) => {

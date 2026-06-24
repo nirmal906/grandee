@@ -6,7 +6,7 @@ import { themeQuartz } from "ag-grid-community"
 import Layout from "./layout"
 import { useTheme } from "../context/themeContext"
 import { ThemeUI } from "../context/themeUI"
-import { ChevronRight, Search, Eye, ArrowLeft, Filter } from "lucide-react"
+import { ChevronRight, Search, Eye, ArrowLeft, Filter, IndianRupee, Loader } from "lucide-react"
 import Modal from "./modal"
 import Offcanvas from "./offcanvas"
 import NoRowsOverlay from "./noRowsOverlay"
@@ -35,6 +35,15 @@ function VendorSummary() {
     const [currentCharIndex, setCurrentCharIndex] = useState(0)
     const [isDeleting, setIsDeleting] = useState(false)
     const words = ["vendor name"]
+
+    const [paymentModalOpen, setPaymentModalOpen]   = useState(false)
+    const [paymentVendor,    setPaymentVendor]       = useState(null)
+    const [pendingInvoices,  setPendingInvoices]     = useState([])
+    const [paymentInvoiceId, setPaymentInvoiceId]    = useState('')
+    const [paymentInvoiceType, setPaymentInvoiceType] = useState('')
+    const [paymentAmount,    setPaymentAmount]        = useState('')
+    const [paymentLoading,   setPaymentLoading]       = useState(false)
+    const [pendingLoading,   setPendingLoading]       = useState(false)
 
     // Permissions
     const [permissions, setPermissions] = useState({
@@ -141,6 +150,48 @@ function VendorSummary() {
         return `₹${num.toFixed(2)}`
     }
 
+    const openPaymentModal = async (vendor) => {
+        setPaymentVendor(vendor)
+        setPaymentModalOpen(true)
+        setPendingLoading(true)
+        setPaymentInvoiceId('')
+        setPaymentInvoiceType('')
+        setPaymentAmount('')
+        try {
+            const res = await axios.get(`/api/vendor-summary/${vendor.vendor_id}/pending-invoices`)
+            if (res.data.success) setPendingInvoices(res.data.data || [])
+        } catch (err) {
+            toast.error('Failed to load pending invoices')
+            setPendingInvoices([])
+        } finally {
+            setPendingLoading(false)
+        }
+    }
+
+    const handlePaymentSubmit = async () => {
+        if (!paymentInvoiceId || !paymentAmount) {
+            toast.error('Please select an invoice and enter a payment amount')
+            return
+        }
+        setPaymentLoading(true)
+        try {
+            const res = await axios.post(`/api/vendor-summary/${paymentVendor.vendor_id}/payment`, {
+                invoice_id:   paymentInvoiceId,
+                invoice_type: paymentInvoiceType,
+                payment_amount: paymentAmount,
+            })
+            if (res.data.success) {
+                toast.success(res.data.message)
+                setPaymentModalOpen(false)
+                fetchVendors()   // refresh the main table
+            }
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Payment failed')
+        } finally {
+            setPaymentLoading(false)
+        }
+    }
+
     // View navigation
     const viewVendorDetail = async (vendor) => {
         setSelectedVendor(vendor)
@@ -165,7 +216,26 @@ function VendorSummary() {
         try {
             const res = await axios.get(`/api/vendor-summary/${selectedVendor.vendor_id}/site/${site.site_id}`)
             if (res.data.success) {
-                setSiteInvoices(res.data.data)
+                // In viewSiteInvoices, after receiving res.data.data:
+                const raw = res.data.data
+                const combined = [
+                    ...(raw.material_invoices || []).map(inv => ({
+                        ...inv,
+                        type: 'Material',
+                        total: parseFloat(inv.debit_entry || 0) + parseFloat(inv.credit_entry || 0),
+                        paid:  parseFloat(inv.credit_entry || 0),
+                        due:   parseFloat(inv.debit_entry  || 0),
+                    })),
+                    ...(raw.labour_invoices || []).map(inv => ({
+                        ...inv,
+                        type: 'Labour',
+                        total: parseFloat(inv.debit_entry || 0) + parseFloat(inv.credit_entry || 0),
+                        paid:  parseFloat(inv.credit_entry || 0),
+                        due:   parseFloat(inv.debit_entry  || 0),
+                    })),
+                ].sort((a, b) => new Date(b.date) - new Date(a.date))
+
+                setSiteInvoices({ ...raw, invoices: combined })
                 setView('invoices')
             }
         } catch (err) {
@@ -205,43 +275,43 @@ function VendorSummary() {
         },
         {
             headerName: "Material Billed (₹)",
-            field: "total_material_billed",
-            width: 140,
+            field: "material_billed",       // ← was: "total_material_billed"
+            width: 150,
             valueFormatter: (p) => formatCurrency(p.value),
         },
         {
             headerName: "Material Paid (₹)",
-            field: "total_material_paid",
+            field: "material_paid",         // ← was: "total_material_paid"
             width: 140,
             valueFormatter: (p) => formatCurrency(p.value),
         },
         {
             headerName: "Labour Billed (₹)",
-            field: "total_labour_billed",
+            field: "labour_billed",         // ← was: "total_labour_billed"
             width: 140,
             valueFormatter: (p) => formatCurrency(p.value),
         },
         {
             headerName: "Labour Paid (₹)",
-            field: "total_labour_paid",
+            field: "labour_paid",           // ← was: "total_labour_paid"
             width: 140,
             valueFormatter: (p) => formatCurrency(p.value),
         },
         {
             headerName: "Total Billed (₹)",
-            field: "grand_total_billed",
+            field: "total_billed",          // ← was: "grand_total_billed"
             width: 140,
             valueFormatter: (p) => formatCurrency(p.value),
         },
         {
             headerName: "Total Paid (₹)",
-            field: "grand_total_paid",
+            field: "total_paid",            // ← was: "grand_total_paid"
             width: 140,
             valueFormatter: (p) => formatCurrency(p.value),
         },
         {
             headerName: "Balance (₹)",
-            field: "total_balance",
+            field: "total_balance",         // already correct
             width: 140,
             cellRenderer: (params) => {
                 const val = Number(params.value) || 0
@@ -251,16 +321,25 @@ function VendorSummary() {
         },
         {
             headerName: "Actions",
-            width: 130,
+            width: 230,       // wider to fit both buttons
             sortable: false,
             cellRenderer: (params) => (
-                <button
-                    onClick={() => viewVendorDetail(params.data)}
-                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
-                    style={{ color: theme.primaryGradientStart, backgroundColor: `${theme.primaryGradientStart}15` }}
-                >
-                    <Eye size={14} /> View Details
-                </button>
+                <div className="flex items-center gap-2 h-full">
+                    <button
+                        onClick={() => viewVendorDetail(params.data)}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors"
+                        style={{ color: theme.primaryGradientStart, backgroundColor: `${theme.primaryGradientStart}15` }}
+                    >
+                        <Eye size={13} /> View
+                    </button>
+                    <button
+                        onClick={() => openPaymentModal(params.data)}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors"
+                        disabled={Number(params.data.total_balance) <= 0}
+                    >
+                        <IndianRupee size={13} /> Pay
+                    </button>
+                </div>
             ),
         },
     ], [currentPage, perPage, theme.primaryGradientStart])
@@ -317,7 +396,7 @@ function VendorSummary() {
         },
         {
             headerName: "Balance",
-            field: "balance",
+            field: "total_balance",
             width: 130,
             cellRenderer: (params) => {
                 const val = Number(params.value) || 0
@@ -410,16 +489,29 @@ function VendorSummary() {
 
     // Summary cards for View 2
     const renderSummaryCards = () => {
-        if (!vendorDetail?.totals) return null
-        const totals = vendorDetail.totals
+        if (!vendorDetail?.sites?.length) return null
+        const sites = vendorDetail.sites
+
+        const totals = sites.reduce((acc, s) => ({
+            total_material_billed: acc.total_material_billed + (s.material_billed || 0),
+            total_material_paid:   acc.total_material_paid   + (s.material_paid   || 0),
+            total_labour_billed:   acc.total_labour_billed   + (s.labour_billed   || 0),
+            total_labour_paid:     acc.total_labour_paid     + (s.labour_paid     || 0),
+            grand_total_billed:    acc.grand_total_billed    + (s.total_billed    || 0),
+            total_balance:         acc.total_balance         + (s.total_balance   || 0),
+        }), {
+            total_material_billed: 0, total_material_paid: 0,
+            total_labour_billed: 0,   total_labour_paid: 0,
+            grand_total_billed: 0,    total_balance: 0,
+        })
 
         const cards = [
             { label: "Total Material Billed", value: totals.total_material_billed, color: "blue" },
-            { label: "Total Material Paid", value: totals.total_material_paid, color: "blue" },
-            { label: "Total Labour Billed", value: totals.total_labour_billed, color: "purple" },
-            { label: "Total Labour Paid", value: totals.total_labour_paid, color: "purple" },
-            { label: "Grand Total", value: totals.grand_total_billed, color: "green" },
-            { label: "Balance", value: totals.total_balance, color: "red" },
+            { label: "Total Material Paid",   value: totals.total_material_paid,   color: "blue" },
+            { label: "Total Labour Billed",   value: totals.total_labour_billed,   color: "purple" },
+            { label: "Total Labour Paid",     value: totals.total_labour_paid,     color: "purple" },
+            { label: "Grand Total",           value: totals.grand_total_billed,    color: "green" },
+            { label: "Balance",               value: totals.total_balance,         color: "red" },
         ]
 
         const colorMap = {
@@ -634,6 +726,79 @@ function VendorSummary() {
                         noRowsOverlayComponentParams={{ text: "No Invoices Found for This Vendor-Site Combination" }}
                     />
                 </div>
+            )}
+
+            {paymentModalOpen && paymentVendor && (
+                <Modal
+                    isOpen={paymentModalOpen}
+                    onClose={() => setPaymentModalOpen(false)}
+                    title={`Make Payment — ${paymentVendor.vendor_name}`}
+                    size="md"
+                >
+                    {pendingLoading ? (
+                        <div className="flex items-center justify-center py-8">
+                            <Loader className="animate-spin" size={28} />
+                        </div>
+                    ) : pendingInvoices.length === 0 ? (
+                        <div className="text-center py-8 text-gray-500">
+                            <p className="font-medium">No outstanding invoices</p>
+                            <p className="text-sm mt-1">All invoices for this vendor are fully paid.</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            {/* Invoice selector */}
+                            <ThemeUI.FormField label="Select Invoice" required>
+                                <ThemeUI.Select
+                                    value={paymentInvoiceId}
+                                    onChange={(opt) => {
+                                        const selected = pendingInvoices.find(inv => String(inv.id) === String(opt?.value))
+                                        setPaymentInvoiceId(opt?.value || '')
+                                        setPaymentInvoiceType(selected?.type || '')
+                                        // Pre-fill amount with full outstanding balance
+                                        setPaymentAmount(selected ? parseFloat(selected.debit_entry).toFixed(2) : '')
+                                    }}
+                                    options={pendingInvoices.map(inv => ({
+                                        value: String(inv.id),
+                                        label: `${inv.typelabel} · ${inv.invoice_number} · ${inv.site?.name || ''} · Due: ₹${parseFloat(inv.debit_entry).toFixed(2)}`
+                                    }))}
+                                    placeholder="Select an invoice..."
+                                />
+                            </ThemeUI.FormField>
+
+                            {/* Payment amount */}
+                            <ThemeUI.FormField label="Payment Amount (₹)" required>
+                                <ThemeUI.Input
+                                    type="number"
+                                    step="0.01"
+                                    min="0.01"
+                                    value={paymentAmount}
+                                    onChange={(e) => setPaymentAmount(e.target.value)}
+                                    placeholder="0.00"
+                                />
+                            </ThemeUI.FormField>
+
+                            <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+                                <ThemeUI.Button
+                                    onClick={() => setPaymentModalOpen(false)}
+                                    gradientColors={{ start: theme.secondaryGradientStart, end: theme.secondaryGradientEnd }}
+                                >
+                                    Cancel
+                                </ThemeUI.Button>
+                                <ThemeUI.Button
+                                    onClick={handlePaymentSubmit}
+                                    disabled={paymentLoading}
+                                    gradientColors={{ start: theme.primaryGradientStart, end: theme.primaryGradientEnd }}
+                                    direction={theme.gradientDirection}
+                                >
+                                    {paymentLoading
+                                        ? <><Loader size={14} className="mr-2 animate-spin" /> Processing...</>
+                                        : 'Confirm Payment'
+                                    }
+                                </ThemeUI.Button>
+                            </div>
+                        </div>
+                    )}
+                </Modal>
             )}
         </Layout>
     )

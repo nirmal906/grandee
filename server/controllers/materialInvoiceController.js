@@ -27,6 +27,30 @@ const createInvoiceSnapshot = (invoice, items) => {
     });
 };
 
+/**
+ * Generate next invoice number for the current year.
+ * Format: MI-YYYY-NNNNN
+ * Finds the highest existing sequence for this year and increments by 1.
+ * Must be called inside a transaction to be safe under concurrent load.
+ */
+const generateMaterialInvoiceNumber = async (transaction) => {
+    const year = new Date().getFullYear();
+    const prefix = `MI-${year}-`;
+    const last = await MaterialInvoice.findOne({
+        where: {
+            invoice_number: { [Op.like]: `${prefix}%` }
+        },
+        order: [['invoice_number', 'DESC']],
+        transaction,
+    });
+    let nextSeq = 1;
+    if (last && last.invoice_number) {
+        const seq = parseInt(last.invoice_number.replace(prefix, ''), 10);
+        if (!isNaN(seq)) nextSeq = seq + 1;
+    }
+    return `${prefix}${String(nextSeq).padStart(5, '0')}`;
+};
+
 // Helper function to track changed fields
 const getChangedFields = (oldInvoice, newData) => {
     const changes = {};
@@ -268,8 +292,11 @@ const materialInvoiceController = {
             const creditAmount = Number(credit_entry || 0);
             const sum = parseFloat((debitAmount + creditAmount).toFixed(2));
 
-            if (Object.keys(errors).length === 0 && Math.abs(sum - totalAmount) > 0.01) {
-                errors.debit_entry = `Total Amount (\u20B9${totalAmount.toFixed(2)}) must equal Debit + Credit (\u20B9${sum.toFixed(2)})`;
+            if (Object.keys(errors).length === 0) {
+                if (sum > totalAmount + 0.01) {
+                    errors.debit_entry = `Paid + Due (₹${sum.toFixed(2)}) cannot exceed Total Amount (₹${totalAmount.toFixed(2)})`;
+                }
+                // No error if sum < totalAmount — partial or no payment is allowed
             }
 
             if (Object.keys(errors).length > 0) {
@@ -280,12 +307,13 @@ const materialInvoiceController = {
                 await transaction.rollback();
                 return res.status(400).json({ success: false, message: 'Validation failed', errors });
             }
+            const autoInvoiceNumber = await generateMaterialInvoiceNumber(transaction);
 
             const invoiceData = {
                 site_id,
                 vendor_id,
                 date: new Date(date),
-                invoice_number: invoice_number || null,
+                invoice_number: autoInvoiceNumber,
                 additional_charges: Number(additional_charges || 0).toFixed(2),
                 debit_entry: debit_entry ? Number(debit_entry).toFixed(2) : '0.00',
                 credit_entry: credit_entry ? Number(credit_entry).toFixed(2) : '0.00',
@@ -513,8 +541,11 @@ const materialInvoiceController = {
             const finalCredit = credit_entry !== undefined ? (credit_entry ? Number(credit_entry) : 0) : Number(invoice.credit_entry);
             const sum = parseFloat((finalDebit + finalCredit).toFixed(2));
 
-            if (Object.keys(errors).length === 0 && Math.abs(sum - totalAmount) > 0.01) {
-                errors.debit_entry = `Total Amount (\u20B9${totalAmount.toFixed(2)}) must equal Debit + Credit (\u20B9${sum.toFixed(2)})`;
+            if (Object.keys(errors).length === 0) {
+                if (sum > totalAmount + 0.01) {
+                    errors.debit_entry = `Paid + Due (₹${sum.toFixed(2)}) cannot exceed Total Amount (₹${totalAmount.toFixed(2)})`;
+                }
+                // No error if sum < totalAmount — partial or no payment is allowed
             }
 
             if (Object.keys(errors).length > 0) {
@@ -572,7 +603,6 @@ const materialInvoiceController = {
                 site_id: updateData.site_id !== undefined ? updateData.site_id : invoice.site_id,
                 vendor_id: updateData.vendor_id !== undefined ? updateData.vendor_id : invoice.vendor_id,
                 date: updateData.date !== undefined ? updateData.date : invoice.date,
-                invoice_number: updateData.invoice_number !== undefined ? updateData.invoice_number : invoice.invoice_number,
                 additional_charges: updateData.additional_charges !== undefined ? updateData.additional_charges : invoice.additional_charges,
                 debit_entry: updateData.debit_entry !== undefined ? updateData.debit_entry : invoice.debit_entry,
                 credit_entry: updateData.credit_entry !== undefined ? updateData.credit_entry : invoice.credit_entry,

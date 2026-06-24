@@ -302,17 +302,17 @@ const actionController = {
             const totalBudget = parseFloat(totalBudgetResult?.total || 0);
 
             const materialExpenseResult = await MaterialInvoice.findOne({
-                attributes: [[fn('COALESCE', fn('SUM', col('credit_entry')), 0), 'total']],
-                where:      { status: 1, ...dateFilter, ...siteFilter },
-                raw:        true,
+                attributes: [[fn('COALESCE', fn('SUM', literal('`debit_entry` + `credit_entry`')), 0), 'total']],
+                where: { status: 1, ...dateFilter, ...siteFilter },
+                raw: true,
             });
             const materialExpense = parseFloat(materialExpenseResult?.total || 0);
 
             // ── Only approved labour invoices count toward expense stats ──
             const labourExpenseResult = await LabourInvoice.findOne({
-                attributes: [[fn('COALESCE', fn('SUM', col('credit_entry')), 0), 'total']],
-                where:      { status: 1, approval_status: 'approved', ...dateFilter, ...siteFilter },
-                raw:        true,
+                attributes: [[fn('COALESCE', fn('SUM', literal('`debit_entry` + `credit_entry`')), 0), 'total']],
+                where: { status: 1, approval_status: 'approved', ...dateFilter, ...siteFilter },
+                raw: true,
             });
             const labourExpense = parseFloat(labourExpenseResult?.total || 0);
             const totalExpense  = materialExpense + labourExpense;
@@ -354,20 +354,20 @@ const actionController = {
 
                 const [prevMat, prevLab, prevPay] = await Promise.all([
                     MaterialInvoice.findOne({
-                        attributes: [[fn('COALESCE', fn('SUM', col('credit_entry')), 0), 'total']],
+                        attributes: [[fn('COALESCE', fn('SUM', literal('`debit_entry` + `credit_entry`')), 0), 'total']],
                         where: { status: 1, ...prevDateFilter, ...siteFilter },
-                        raw:   true,
+                        raw: true,
                     }),
-                    // ── approved only for previous period too ──
                     LabourInvoice.findOne({
-                        attributes: [[fn('COALESCE', fn('SUM', col('credit_entry')), 0), 'total']],
+                        attributes: [[fn('COALESCE', fn('SUM', literal('`debit_entry` + `credit_entry`')), 0), 'total']],
                         where: { status: 1, approval_status: 'approved', ...prevDateFilter, ...siteFilter },
-                        raw:   true,
+                        raw: true,
                     }),
                     SitePayment.findOne({
+                        // SitePayment.amount stays as-is — it represents actual client payments received
                         attributes: [[fn('COALESCE', fn('SUM', col('amount')), 0), 'total']],
                         where: { status: 1, ...prevPaymentDateFilter, ...siteFilter },
-                        raw:   true,
+                        raw: true,
                     }),
                 ]);
                 previousPeriodData.materialExpense = parseFloat(prevMat?.total || 0);

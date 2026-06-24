@@ -28,7 +28,7 @@ const MaterialInvoice = sequelize.define(
         },
         invoice_number: {
             type: DataTypes.STRING(100),
-            allowNull: true,
+            allowNull: false,
             comment: 'Vendor invoice number (user-entered)'
         },
         additional_charges: {

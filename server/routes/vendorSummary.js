@@ -12,4 +12,8 @@ router.get('/:vendorId', authMiddleware, vendorSummaryController.getVendorDetail
 // Vendor + Site invoices list
 router.get('/:vendorId/site/:siteId', authMiddleware, vendorSummaryController.getVendorSiteInvoices);
 
+router.post('/:vendorId/payment', authMiddleware, vendorSummaryController.recordVendorPayment);
+
+router.get('/:vendorId/pending-invoices', authMiddleware, vendorSummaryController.getPendingInvoicesByVendor);
+
 module.exports = router;

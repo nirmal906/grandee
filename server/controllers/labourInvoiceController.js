@@ -26,6 +26,22 @@ const getIncludeArray = () => [
     },
 ];
 
+const generateLabourInvoiceNumber = async (transaction) => {
+    const year = new Date().getFullYear();
+    const prefix = `LI-${year}-`;
+    const last = await LabourInvoice.findOne({
+        where: { invoice_number: { [Op.like]: `${prefix}%` } },
+        order: [['invoice_number', 'DESC']],
+        transaction,
+    });
+    let nextSeq = 1;
+    if (last && last.invoice_number) {
+        const seq = parseInt(last.invoice_number.replace(prefix, ''), 10);
+        if (!isNaN(seq)) nextSeq = seq + 1;
+    }
+    return `${prefix}${String(nextSeq).padStart(5, '0')}`;
+};
+
 const labourInvoiceController = {
 
     // ─────────────────────────────────────────────
@@ -236,7 +252,7 @@ const labourInvoiceController = {
     createLabourInvoice: async (req, res) => {
         const transaction = await LabourInvoice.sequelize.transaction();
         try {
-            const { site_id, vendor_id, date, invoice_number, notes, debit_entry, credit_entry, status } = req.body;
+            const { site_id, vendor_id, date, notes, debit_entry, credit_entry, status } = req.body;
             const userId   = getUserId(req);
             const userRole = req.user?.role;
             const isAdmin  = isAdminRole(userRole);
@@ -359,13 +375,14 @@ const labourInvoiceController = {
                 await transaction.rollback();
                 return res.status(400).json({ success: false, message: 'Validation failed', errors });
             }
+            const autoInvoiceNumber = await generateLabourInvoiceNumber(transaction);
 
             // ── Create invoice ──
             const invoiceData = {
                 site_id,
                 vendor_id,
                 date:            new Date(date),
-                invoice_number:  invoice_number || null,
+                invoice_number:  autoInvoiceNumber,
                 notes:           notes || null,
                 debit_entry:     isAdmin ? (debit_entry  ? Number(debit_entry).toFixed(2)  : 0.00) : null,
                 credit_entry:    isAdmin ? (credit_entry ? Number(credit_entry).toFixed(2) : 0.00) : null,
@@ -433,7 +450,7 @@ const labourInvoiceController = {
                 }
             }
 
-            const { site_id, vendor_id, date, invoice_number, notes, debit_entry, credit_entry, status } = req.body;
+            const { site_id, vendor_id, date, notes, debit_entry, credit_entry, status } = req.body;
             const errors = {};
 
             // ── Parse items if provided ──
@@ -562,7 +579,6 @@ const labourInvoiceController = {
             if (site_id        !== undefined) updateData.site_id        = site_id;
             if (vendor_id      !== undefined) updateData.vendor_id      = vendor_id;
             if (date           !== undefined) updateData.date           = new Date(date);
-            if (invoice_number !== undefined) updateData.invoice_number = invoice_number || null;
             if (notes          !== undefined) updateData.notes          = notes || null;
 
             if (isAdmin) {
