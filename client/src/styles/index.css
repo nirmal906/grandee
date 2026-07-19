@@ -1,0 +1,196 @@
+/* Import Tailwind */
+@import "tailwindcss";
+
+/* =============================
+   Base Styles
+============================= */
+body {
+    background-color: #f3f4f6;
+    /* Tailwind's bg-gray-100 */
+    overflow-x: hidden !important;
+}
+
+/* =============================
+   Color Input Styling
+============================= */
+input[type="color"] {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    border: none;
+}
+
+input[type="color"]::-webkit-color-swatch-wrapper {
+    padding: 0;
+}
+
+input[type="color"]::-webkit-color-swatch,
+input[type="color"]::-moz-color-swatch {
+    border: none;
+}
+
+/* =============================
+   Color Input Component Styles
+============================= */
+.color-input-container {
+    display: flex;
+    width: 100%;
+}
+
+.color-picker {
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    border-radius: 6px 0 0 6px;
+    overflow: hidden;
+    border: 1px solid #e5e7eb;
+    border-right: none;
+    padding: 0;
+}
+
+.color-picker input[type="color"] {
+    width: 150%;
+    height: 150%;
+    transform: translate(-25%, -25%);
+    padding: 0;
+    margin: 0;
+    border: none;
+    cursor: pointer;
+}
+
+.color-text-input {
+    flex: 1;
+    height: 40px;
+    border-radius: 0 6px 6px 0;
+    border: 1px solid #e5e7eb;
+    padding: 0 10px;
+    font-size: 14px;
+    outline: none;
+    transition: all 0.2s;
+}
+
+/* =============================
+   Preview and Delete Icon Styles
+============================= */
+.preview-container {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    margin-right: 10px;
+    position: relative;
+}
+
+.delete-icon {
+    background-color: #f44336;
+    color: white;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    font-size: 12px;
+}
+
+.delete-icon:hover {
+    background-color: #d32f2f;
+}
+
+/* =============================
+   Responsive Layout Styles
+============================= */
+@media (max-width: 768px) {
+    .gradient-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 640px) {
+    .file-inputs-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (min-width: 641px) and (max-width: 1024px) {
+    .file-inputs-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (max-width: 500px) {
+    .ag-label,
+    .ag-paging-row-summary-panel {
+        display: none;
+    }
+}
+
+
+.custom-ag-grid .ag-header {
+    background: var(--header-gradient);
+    min-height: var(--header-height);
+    cursor: pointer;
+}
+
+.custom-ag-grid .ag-cell {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+/* Add this to your CSS file or in a <style> tag */
+
+/* Custom scrollbar for sidebar navigation */
+.sidebar-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 2px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+/* For Firefox */
+.sidebar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+}
+
+/* Remove bottom rounded corners from AG Grid */
+.custom-ag-grid .ag-root-wrapper {
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+}
+
+.custom-ag-grid .ag-root {
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+}
+
+@layer utilities {
+  @keyframes tooltipFade {
+    0% {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .tooltip-animation {
+    animation: tooltipFade 0.25s ease-out; /* Adjust 0.25s -> slower */
+  }
+}
