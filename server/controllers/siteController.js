@@ -168,6 +168,7 @@ const siteController = {
                 name,
                 client_name,
                 client_mobile,
+                assign_engineer,
                 pincode,
                 post_office_name,
                 district,
@@ -241,6 +242,7 @@ const siteController = {
                 name: name.trim(),
                 client_name: client_name?.trim() || null,
                 client_mobile: client_mobile.trim(),
+                assign_engineer: assign_engineer?.trim() || null,
                 pincode: pincode?.trim() || null,
                 post_office_name: post_office_name?.trim() || null,
                 district: district?.trim() || null,
@@ -298,6 +300,7 @@ const siteController = {
                 name,
                 client_name,
                 client_mobile,
+                assign_engineer,
                 pincode,
                 post_office_name,
                 district,
@@ -401,6 +404,7 @@ const siteController = {
             if (name !== undefined) updateData.name = name.trim();
             if (client_name !== undefined) updateData.client_name = client_name?.trim() || null;
             if (client_mobile !== undefined) updateData.client_mobile = client_mobile.trim();
+            if (assign_engineer !== undefined) updateData.assign_engineer = assign_engineer?.trim() || null;
             if (pincode !== undefined) updateData.pincode = pincode?.trim() || null;
             if (post_office_name !== undefined) updateData.post_office_name = post_office_name?.trim() || null;
             if (district !== undefined) updateData.district = district?.trim() || null;

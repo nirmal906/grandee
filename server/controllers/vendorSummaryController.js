@@ -28,13 +28,13 @@ const vendorSummaryController = {
                 // Material invoices — only active
                 const materialInvoices = await MaterialInvoice.findAll({
                     where: { vendor_id: vendor.id, status: 1 },
-                    attributes: ['debit_entry', 'credit_entry'],
+                    attributes: ['debit_entry', 'credit_entry', 'date', 'updated_at'],
                 });
 
                 // Labour invoices — only active + approved
                 const labourInvoices = await LabourInvoice.findAll({
                     where: { vendor_id: vendor.id, status: 1, approval_status: 'approved' },
-                    attributes: ['debit_entry', 'credit_entry'],
+                    attributes: ['debit_entry', 'credit_entry', 'date', 'updated_at'],
                 });
 
                 let materialBilled = 0, materialPaid = 0;
@@ -53,6 +53,20 @@ const vendorSummaryController = {
                 const totalPaid    = parseFloat((materialPaid + labourPaid).toFixed(2));
                 const totalBalance = parseFloat((totalBilled - totalPaid).toFixed(2));
 
+                // Last purchase = most recent invoice date (material or labour)
+                // Last paid date = most recent update on an invoice that has received a payment
+                const allInvoices = [...materialInvoices, ...labourInvoices];
+                const lastPurchase = allInvoices.reduce((latest, inv) => {
+                    if (!inv.date) return latest;
+                    const d = new Date(inv.date);
+                    return (!latest || d > latest) ? d : latest;
+                }, null);
+                const lastPaidDate = allInvoices.reduce((latest, inv) => {
+                    if (parseFloat(inv.credit_entry || 0) <= 0 || !inv.updated_at) return latest;
+                    const d = new Date(inv.updated_at);
+                    return (!latest || d > latest) ? d : latest;
+                }, null);
+
                 // Only include vendors that have at least one invoice
                 if (materialInvoices.length > 0 || labourInvoices.length > 0) {
                     summaryData.push({
@@ -70,6 +84,8 @@ const vendorSummaryController = {
                         total_billed:           totalBilled,
                         total_paid:             totalPaid,
                         total_balance:          totalBalance,
+                        last_purchase:          lastPurchase,
+                        last_paid_date:         lastPaidDate,
                     });
                 }
             }
@@ -182,10 +198,17 @@ const vendorSummaryController = {
 
     // ─────────────────────────────────────────────
     // POST /api/vendor-summary/:vendorId/payment
-    // Records a payment (credit_entry update) against one invoice
-    // Body: { invoice_id, invoice_type, payment_amount }
-    //   invoice_type: 'material' | 'labour'
-    //   payment_amount: positive number
+    // Records a vendor payment.
+    //
+    // New (preferred) flow — free-form vendor payment:
+    //   Body: { payment_amount }
+    //   The amount is applied against the vendor's outstanding invoices
+    //   automatically (oldest invoice first, across material + labour),
+    //   so the caller never has to pick an individual invoice.
+    //
+    // Legacy flow — kept for backward compatibility:
+    //   Body: { invoice_id, invoice_type, payment_amount }
+    //   Applies the payment to one specific invoice only.
     // ─────────────────────────────────────────────
     recordVendorPayment: async (req, res) => {
         const t = await Vendor.sequelize.transaction();
@@ -193,9 +216,9 @@ const vendorSummaryController = {
             const { vendorId } = req.params;
             const { invoice_id, invoice_type, payment_amount } = req.body;
 
-            if (!invoice_id || !invoice_type || !payment_amount) {
+            if (!payment_amount) {
                 await t.rollback();
-                return res.status(400).json({ success: false, message: 'invoice_id, invoice_type, and payment_amount are required' });
+                return res.status(400).json({ success: false, message: 'payment_amount is required' });
             }
 
             const amount = parseFloat(payment_amount);
@@ -204,43 +227,121 @@ const vendorSummaryController = {
                 return res.status(400).json({ success: false, message: 'payment_amount must be a positive number' });
             }
 
-            const Model = invoice_type === 'labour' ? LabourInvoice : MaterialInvoice;
+            const vendor = await Vendor.findOne({ where: { id: vendorId }, transaction: t });
+            if (!vendor) {
+                await t.rollback();
+                return res.status(404).json({ success: false, message: 'Vendor not found' });
+            }
 
-            const invoice = await Model.findOne({
-                where: { id: invoice_id, vendor_id: vendorId },
+            const updatedBy = req.user?.userId ?? req.user?.id;
+
+            // ── Legacy flow: payment applied to one specific invoice ──
+            if (invoice_id) {
+                const Model = invoice_type === 'labour' ? LabourInvoice : MaterialInvoice;
+
+                const invoice = await Model.findOne({
+                    where: { id: invoice_id, vendor_id: vendorId },
+                    transaction: t,
+                    lock: t.LOCK.UPDATE,
+                });
+
+                if (!invoice) {
+                    await t.rollback();
+                    return res.status(404).json({ success: false, message: 'Invoice not found for this vendor' });
+                }
+
+                const currentDebit  = parseFloat(invoice.debit_entry  || 0);
+                const currentCredit = parseFloat(invoice.credit_entry || 0);
+
+                if (amount > currentDebit + 0.01) {
+                    await t.rollback();
+                    return res.status(400).json({
+                        success: false,
+                        message: `Payment amount (₹${amount.toFixed(2)}) exceeds outstanding balance (₹${currentDebit.toFixed(2)})`
+                    });
+                }
+
+                const newDebit  = parseFloat((currentDebit  - amount).toFixed(2));
+                const newCredit = parseFloat((currentCredit + amount).toFixed(2));
+
+                await invoice.update(
+                    { debit_entry: newDebit, credit_entry: newCredit, updated_by: updatedBy },
+                    { transaction: t }
+                );
+
+                await t.commit();
+                return res.status(200).json({
+                    success: true,
+                    message: `Payment of ₹${amount.toFixed(2)} recorded successfully`,
+                    data: { invoice_id, new_debit: newDebit, new_credit: newCredit }
+                });
+            }
+
+            // ── New flow: free-form vendor payment, auto-applied across outstanding invoices ──
+            const matInvoices = await MaterialInvoice.findAll({
+                where: { vendor_id: vendorId, status: 1, debit_entry: { [Op.gt]: 0 } },
                 transaction: t,
                 lock: t.LOCK.UPDATE,
             });
 
-            if (!invoice) {
+            const labInvoices = await LabourInvoice.findAll({
+                where: { vendor_id: vendorId, status: 1, approval_status: 'approved', debit_entry: { [Op.gt]: 0 } },
+                transaction: t,
+                lock: t.LOCK.UPDATE,
+            });
+
+            // Oldest invoice first (FIFO), mixing material + labour together
+            const outstandingInvoices = [...matInvoices, ...labInvoices].sort((a, b) => {
+                const da = new Date(a.date).getTime();
+                const db = new Date(b.date).getTime();
+                if (da !== db) return da - db;
+                return a.id - b.id;
+            });
+
+            const totalOutstanding = outstandingInvoices.reduce(
+                (sum, inv) => sum + parseFloat(inv.debit_entry || 0), 0
+            );
+
+            if (totalOutstanding <= 0) {
                 await t.rollback();
-                return res.status(404).json({ success: false, message: 'Invoice not found for this vendor' });
+                return res.status(400).json({ success: false, message: 'This vendor has no outstanding balance to pay' });
             }
 
-            const currentDebit  = parseFloat(invoice.debit_entry  || 0);
-            const currentCredit = parseFloat(invoice.credit_entry || 0);
-
-            if (amount > currentDebit + 0.01) {
+            if (amount > totalOutstanding + 0.01) {
                 await t.rollback();
                 return res.status(400).json({
                     success: false,
-                    message: `Payment amount (₹${amount.toFixed(2)}) exceeds outstanding balance (₹${currentDebit.toFixed(2)})`
+                    message: `Payment amount (₹${amount.toFixed(2)}) exceeds vendor's total outstanding balance (₹${totalOutstanding.toFixed(2)})`
                 });
             }
 
-            const newDebit  = parseFloat((currentDebit  - amount).toFixed(2));
-            const newCredit = parseFloat((currentCredit + amount).toFixed(2));
+            let remaining = amount;
+            const invoicesUpdated = [];
 
-            await invoice.update(
-                { debit_entry: newDebit, credit_entry: newCredit, updated_by: req.user?.userId ?? req.user?.id },
-                { transaction: t }
-            );
+            for (const invoice of outstandingInvoices) {
+                if (remaining <= 0.004) break; // fully applied (allow for rounding)
+
+                const currentDebit  = parseFloat(invoice.debit_entry  || 0);
+                const currentCredit = parseFloat(invoice.credit_entry || 0);
+                const applyAmount   = Math.min(remaining, currentDebit);
+
+                const newDebit  = parseFloat((currentDebit  - applyAmount).toFixed(2));
+                const newCredit = parseFloat((currentCredit + applyAmount).toFixed(2));
+
+                await invoice.update(
+                    { debit_entry: newDebit, credit_entry: newCredit, updated_by: updatedBy },
+                    { transaction: t }
+                );
+
+                invoicesUpdated.push({ invoice_id: invoice.id, applied: parseFloat(applyAmount.toFixed(2)) });
+                remaining = parseFloat((remaining - applyAmount).toFixed(2));
+            }
 
             await t.commit();
             res.status(200).json({
                 success: true,
                 message: `Payment of ₹${amount.toFixed(2)} recorded successfully`,
-                data: { invoice_id, new_debit: newDebit, new_credit: newCredit }
+                data: { vendor_id: vendorId, amount_paid: amount, invoices_updated: invoicesUpdated }
             });
         } catch (err) {
             await t.rollback();

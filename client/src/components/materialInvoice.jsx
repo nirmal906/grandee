@@ -544,11 +544,18 @@ function MaterialInvoice() {
                 rate: item.rate || "",
             })))
         } else {
-            // items இல்லாத போது debit+credit sum = total
-            const existingTotal = (
-                parseFloat(entry.debit_entry || 0) + parseFloat(entry.credit_entry || 0)
-            ).toFixed(2)
-            setManualTotalAmount(existingTotal !== "0.00" ? existingTotal : "")
+            // Prefer the persisted manual_total_amount (new invoices always have this).
+            // Fall back to reconstructing from debit+credit for legacy records saved
+            // before this field existed on the invoice.
+            const persistedTotal = entry.manual_total_amount
+            if (persistedTotal !== undefined && persistedTotal !== null && Number(persistedTotal) > 0) {
+                setManualTotalAmount(Number(persistedTotal).toFixed(2))
+            } else {
+                const existingTotal = (
+                    parseFloat(entry.debit_entry || 0) + parseFloat(entry.credit_entry || 0)
+                ).toFixed(2)
+                setManualTotalAmount(existingTotal !== "0.00" ? existingTotal : "")
+            }
             setItems([{ ...emptyItem }])
         }
 

@@ -32,7 +32,7 @@ const actionController = {
                     status:    { [Op.in]: ALLOWED_STATUSES },
                     id:        { [Op.in]: allowedIds },
                 },
-                attributes: ['id', 'name', 'start_date', 'updated_at', 'total_budget', 'status', 'client_name'],
+                attributes: ['id', 'name', 'start_date', 'updated_at', 'total_budget', 'status', 'client_name', 'assign_engineer'],
                 order:      [['name', 'ASC']],
                 limit:      limitNum,
                 offset,
@@ -86,6 +86,7 @@ const actionController = {
                     id:               site.id,
                     name:             site.name,
                     client_name:      site.client_name,
+                    assign_engineer:  site.assign_engineer,
                     start_date:       site.start_date,
                     end_date:         site.status === 'completed' ? site.updated_at : null,
                     status:           site.status,
@@ -270,6 +271,8 @@ const actionController = {
                     message: 'Dashboard data fetched successfully',
                     data: {
                         activeSites:       { count: 0,  change: 0, changeType: 'neutral' },
+                        totalVendors:      { count: 0, materialCount: 0, labourCount: 0 },
+                        vendorPending:     { amount: 0, overdueCount: 0 },
                         totalBudget:       { amount: 0, change: 0, changeType: 'neutral', percentage: 100 },
                         materialExpense:   { amount: 0, change: 0, changeType: 'neutral', percentage: 0 },
                         labourExpense:     { amount: 0, change: 0, changeType: 'neutral', percentage: 0 },
@@ -293,6 +296,44 @@ const actionController = {
             const activeSites = await Site.count({
                 where: { status: 'active', is_active: 1, id: { [Op.in]: allowedIds } },
             });
+
+            // ── Vendor stats: total active vendors + outstanding payable across in-scope sites ──
+            const totalVendorsCount = await Vendor.count({ where: { is_active: true } });
+
+            const [materialVendorCount, labourVendorCount] = await Promise.all([
+                MaterialInvoice.count({
+                    where: { status: 1, ...siteFilter },
+                    distinct: true,
+                    col: 'vendor_id',
+                }),
+                LabourInvoice.count({
+                    where: { status: 1, approval_status: 'approved', ...siteFilter },
+                    distinct: true,
+                    col: 'vendor_id',
+                }),
+            ]);
+
+            const vendorPendingRows = await sequelize.query(`
+                SELECT vendor_id, SUM(pending) AS pending
+                FROM (
+                    SELECT vendor_id, debit_entry AS pending
+                    FROM material_invoices
+                    WHERE status = 1 AND vendor_id IS NOT NULL AND site_id IN (:siteIds)
+                    UNION ALL
+                    SELECT vendor_id, debit_entry AS pending
+                    FROM labour_invoices
+                    WHERE status = 1 AND approval_status = 'approved' AND vendor_id IS NOT NULL AND site_id IN (:siteIds)
+                ) combined
+                GROUP BY vendor_id
+            `, {
+                replacements: { siteIds: allowedIds.length ? allowedIds : [0] },
+                type: QueryTypes.SELECT,
+            });
+
+            const vendorPendingTotal = vendorPendingRows.reduce(
+                (sum, r) => sum + Math.max(0, parseFloat(r.pending || 0)), 0
+            );
+            const vendorsOverdueCount = vendorPendingRows.filter(r => parseFloat(r.pending || 0) > 0.01).length;
 
             const totalBudgetResult = await Site.findOne({
                 attributes: [[fn('COALESCE', fn('SUM', col('total_budget')), 0), 'total']],
@@ -400,6 +441,15 @@ const actionController = {
                 message: 'Dashboard data fetched successfully',
                 data: {
                     activeSites:     { count: activeSites, change: 0, changeType: 'neutral' },
+                    totalVendors: {
+                        count: totalVendorsCount,
+                        materialCount: materialVendorCount,
+                        labourCount: labourVendorCount,
+                    },
+                    vendorPending: {
+                        amount: vendorPendingTotal,
+                        overdueCount: vendorsOverdueCount,
+                    },
                     totalBudget:     { amount: totalBudget, change: 0, changeType: 'neutral', percentage: 100 },
                     materialExpense: {
                         amount: materialExpense, change: materialChange,

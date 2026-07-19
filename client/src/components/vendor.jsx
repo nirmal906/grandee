@@ -324,6 +324,7 @@ function Vendor(){
 				field: "phone",
 				sortable: true,
 				width: 140,
+				valueFormatter: (params) => params.value || "-",
 			},
 			{
 				headerName: "Email",
@@ -387,13 +388,13 @@ function Vendor(){
 							error			= {backendErrors.name}
 						/>
 					</ThemeUI.FormField>
-					<ThemeUI.FormField label="Phone Number" name="phone" error={backendErrors.phone} required>
+					<ThemeUI.FormField label="Phone Number" name="phone" error={backendErrors.phone}>
 						<ThemeUI.Input
 							type			= "tel"
 							name			= "phone"
 							value			= {formData.phone}
 							onChange		= {handleInputChange}
-							placeholder		= "10-digit phone number"
+							placeholder		= "10-digit phone number (optional)"
 							maxLength		= {10}
 							error			= {backendErrors.phone}
 						/>

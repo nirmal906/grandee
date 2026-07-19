@@ -38,12 +38,8 @@ function VendorSummary() {
 
     const [paymentModalOpen, setPaymentModalOpen]   = useState(false)
     const [paymentVendor,    setPaymentVendor]       = useState(null)
-    const [pendingInvoices,  setPendingInvoices]     = useState([])
-    const [paymentInvoiceId, setPaymentInvoiceId]    = useState('')
-    const [paymentInvoiceType, setPaymentInvoiceType] = useState('')
     const [paymentAmount,    setPaymentAmount]        = useState('')
     const [paymentLoading,   setPaymentLoading]       = useState(false)
-    const [pendingLoading,   setPendingLoading]       = useState(false)
 
     // Permissions
     const [permissions, setPermissions] = useState({
@@ -150,34 +146,21 @@ function VendorSummary() {
         return `₹${num.toFixed(2)}`
     }
 
-    const openPaymentModal = async (vendor) => {
+    const openPaymentModal = (vendor) => {
         setPaymentVendor(vendor)
-        setPaymentModalOpen(true)
-        setPendingLoading(true)
-        setPaymentInvoiceId('')
-        setPaymentInvoiceType('')
         setPaymentAmount('')
-        try {
-            const res = await axios.get(`/api/vendor-summary/${vendor.vendor_id}/pending-invoices`)
-            if (res.data.success) setPendingInvoices(res.data.data || [])
-        } catch (err) {
-            toast.error('Failed to load pending invoices')
-            setPendingInvoices([])
-        } finally {
-            setPendingLoading(false)
-        }
+        setPaymentModalOpen(true)
     }
 
     const handlePaymentSubmit = async () => {
-        if (!paymentInvoiceId || !paymentAmount) {
-            toast.error('Please select an invoice and enter a payment amount')
+        const amount = Number(paymentAmount)
+        if (!paymentAmount || isNaN(amount) || amount <= 0) {
+            toast.error('Please enter a valid payment amount')
             return
         }
         setPaymentLoading(true)
         try {
             const res = await axios.post(`/api/vendor-summary/${paymentVendor.vendor_id}/payment`, {
-                invoice_id:   paymentInvoiceId,
-                invoice_type: paymentInvoiceType,
                 payment_amount: paymentAmount,
             })
             if (res.data.success) {
@@ -735,69 +718,46 @@ function VendorSummary() {
                     title={`Make Payment — ${paymentVendor.vendor_name}`}
                     size="md"
                 >
-                    {pendingLoading ? (
-                        <div className="flex items-center justify-center py-8">
-                            <Loader className="animate-spin" size={28} />
+                    <div className="space-y-4">
+                        <div className="rounded-lg bg-gray-50 border border-gray-200 px-4 py-3 flex justify-between items-center">
+                            <span className="text-sm text-gray-600">Outstanding Balance</span>
+                            <span className="text-sm font-semibold text-red-600">
+                                {formatCurrency(paymentVendor.total_balance)}
+                            </span>
                         </div>
-                    ) : pendingInvoices.length === 0 ? (
-                        <div className="text-center py-8 text-gray-500">
-                            <p className="font-medium">No outstanding invoices</p>
-                            <p className="text-sm mt-1">All invoices for this vendor are fully paid.</p>
-                        </div>
-                    ) : (
-                        <div className="space-y-4">
-                            {/* Invoice selector */}
-                            <ThemeUI.FormField label="Select Invoice" required>
-                                <ThemeUI.Select
-                                    value={paymentInvoiceId}
-                                    onChange={(opt) => {
-                                        const selected = pendingInvoices.find(inv => String(inv.id) === String(opt?.value))
-                                        setPaymentInvoiceId(opt?.value || '')
-                                        setPaymentInvoiceType(selected?.type || '')
-                                        // Pre-fill amount with full outstanding balance
-                                        setPaymentAmount(selected ? parseFloat(selected.debit_entry).toFixed(2) : '')
-                                    }}
-                                    options={pendingInvoices.map(inv => ({
-                                        value: String(inv.id),
-                                        label: `${inv.typelabel} · ${inv.invoice_number} · ${inv.site?.name || ''} · Due: ₹${parseFloat(inv.debit_entry).toFixed(2)}`
-                                    }))}
-                                    placeholder="Select an invoice..."
-                                />
-                            </ThemeUI.FormField>
 
-                            {/* Payment amount */}
-                            <ThemeUI.FormField label="Payment Amount (₹)" required>
-                                <ThemeUI.Input
-                                    type="number"
-                                    step="0.01"
-                                    min="0.01"
-                                    value={paymentAmount}
-                                    onChange={(e) => setPaymentAmount(e.target.value)}
-                                    placeholder="0.00"
-                                />
-                            </ThemeUI.FormField>
+                        {/* Payment amount */}
+                        <ThemeUI.FormField label="Payment Amount (₹)" required>
+                            <ThemeUI.Input
+                                type="number"
+                                step="0.01"
+                                min="0.01"
+                                value={paymentAmount}
+                                onChange={(e) => setPaymentAmount(e.target.value)}
+                                placeholder="0.00"
+                            />
+                        </ThemeUI.FormField>
 
-                            <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
-                                <ThemeUI.Button
-                                    onClick={() => setPaymentModalOpen(false)}
-                                    gradientColors={{ start: theme.secondaryGradientStart, end: theme.secondaryGradientEnd }}
-                                >
-                                    Cancel
-                                </ThemeUI.Button>
-                                <ThemeUI.Button
-                                    onClick={handlePaymentSubmit}
-                                    disabled={paymentLoading}
-                                    gradientColors={{ start: theme.primaryGradientStart, end: theme.primaryGradientEnd }}
-                                    direction={theme.gradientDirection}
-                                >
-                                    {paymentLoading
-                                        ? <><Loader size={14} className="mr-2 animate-spin" /> Processing...</>
-                                        : 'Confirm Payment'
-                                    }
-                                </ThemeUI.Button>
-                            </div>
+                        <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+                            <ThemeUI.Button
+                                onClick={() => setPaymentModalOpen(false)}
+                                gradientColors={{ start: theme.secondaryGradientStart, end: theme.secondaryGradientEnd }}
+                            >
+                                Cancel
+                            </ThemeUI.Button>
+                            <ThemeUI.Button
+                                onClick={handlePaymentSubmit}
+                                disabled={paymentLoading}
+                                gradientColors={{ start: theme.primaryGradientStart, end: theme.primaryGradientEnd }}
+                                direction={theme.gradientDirection}
+                            >
+                                {paymentLoading
+                                    ? <><Loader size={14} className="mr-2 animate-spin" /> Processing...</>
+                                    : 'Confirm Payment'
+                                }
+                            </ThemeUI.Button>
                         </div>
-                    )}
+                    </div>
                 </Modal>
             )}
         </Layout>

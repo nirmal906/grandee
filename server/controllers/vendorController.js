@@ -175,10 +175,8 @@ const vendorController = {
                 errors.name = 'Vendor name is required';
             }
 
-            // Phone (required)
-            if (!phone || !phone.trim()) {
-                errors.phone = 'Phone number is required';
-            } else if (!/^[0-9]{10}$/.test(phone.trim())) {
+            // Phone (optional) — validate format only when provided
+            if (phone && phone.trim() && !/^[0-9]{10}$/.test(phone.trim())) {
                 errors.phone = 'Phone number must be exactly 10 digits';
             }
 
@@ -242,7 +240,7 @@ const vendorController = {
             }
             const vendorData = {
                 name: name.trim(),
-                phone: phone.trim(),
+                phone: phone && phone.trim() ? phone.trim() : null,
                 email: email ? email.trim().toLowerCase() : null,
                 pincode: pincode ? pincode.trim() : null,
                 post_office_name: post_office_name ? post_office_name.trim() : null,
@@ -335,10 +333,10 @@ const vendorController = {
                 }
             }
             
-            // Validate phone
+            // Validate phone (optional)
             if(phone !== undefined){
                 if(!phone || !phone.trim()){
-                    errors.phone = 'Phone number is required';
+                    // Phone is optional — clearing it is allowed
                 }else if(!/^[0-9]{10}$/.test(phone.trim())){
                     errors.phone = 'Phone number must be exactly 10 digits';
                 }else if(phone.trim() !== vendor.phone){
@@ -391,7 +389,7 @@ const vendorController = {
             };
             
             if(name !== undefined) updateData.name = name.trim();
-            if(phone !== undefined) updateData.phone = phone.trim();
+            if(phone !== undefined) updateData.phone = phone && phone.trim() ? phone.trim() : null;
             if(email !== undefined) updateData.email = email.trim().toLowerCase();
             if(pincode !== undefined) updateData.pincode = pincode.trim();
             if(post_office_name !== undefined) updateData.post_office_name = post_office_name?.trim() || null;

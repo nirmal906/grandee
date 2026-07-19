@@ -30,6 +30,11 @@ const Site          = sequelize.define(
             allowNull: false,
             comment: 'Client mobile number - required field'
         },
+        assign_engineer: {
+            type: DataTypes.STRING(150),
+            allowNull: true,
+            comment: 'Name of the engineer assigned to oversee this site'
+        },
         pincode: {
             type: DataTypes.STRING(10),
             allowNull: true,

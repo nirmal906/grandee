@@ -15,7 +15,7 @@ import * as XLSX from 'xlsx'
 import SiteTemplate from "../templates/site"
 
 const INITIAL_FORM_STATE = {
-	name: "", client_name: "", client_mobile: "", pincode: "", district: "", state: "", region: "", 
+	name: "", client_name: "", client_mobile: "", assign_engineer: "", pincode: "", district: "", state: "", region: "", 
 	country: "India", full_address: "", start_date: "", total_budget: "", status: "planning", 
 	notes: "", post_office_name: "",
 	checkout_photo: null
@@ -230,6 +230,7 @@ function Site() {
 			const exportData = sites.map((site, index) => ({
 				'S.No': (currentPage - 1) * perPage + index + 1,
 				'Site Name': site.name,
+				'Assign Engineer': site.assign_engineer || '-',
 				'Location': site.full_address || `${site.pincode || ''}, ${site.district || ''}, ${site.state || ''}`,
 				'Status': site.status?.charAt(0).toUpperCase() + site.status?.slice(1),
 				'Budget (₹)': site.total_budget ? parseFloat(site.total_budget).toLocaleString("en-IN") : '-',
@@ -238,7 +239,7 @@ function Site() {
 			}))
 			const wb = XLSX.utils.book_new()
 			const ws = XLSX.utils.json_to_sheet(exportData)
-			ws['!cols'] = [{ wch: 8 }, { wch: 30 }, { wch: 40 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 20 }]
+			ws['!cols'] = [{ wch: 8 }, { wch: 30 }, { wch: 20 }, { wch: 40 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 20 }]
 			XLSX.utils.book_append_sheet(wb, ws, 'Sites')
 			const timestamp = new Date().toISOString().split('T')[0]
 			XLSX.writeFile(wb, `sites_${timestamp}.xlsx`)
@@ -271,6 +272,7 @@ function Site() {
 		setEditingSite(site)
 		setFormData({
 			name: site.name || "", client_name: site.client_name || "", client_mobile: site.client_mobile || "",
+			assign_engineer: site.assign_engineer || "",
 			pincode: site.pincode || "", district: site.district || "", state: site.state || "",
 			region: site.region || "", country: site.country || "India", post_office_name: site.post_office_name || "",
 			full_address: site.full_address || "", start_date: site.start_date ? site.start_date.split("T")[0] : "",
@@ -497,6 +499,13 @@ function Site() {
 				minWidth: 200,
 			},
 			{
+				headerName: "Assign Engineer",
+				field: "assign_engineer",
+				sortable: true,
+				width: 170,
+				valueFormatter: (params) => params.value || "-",
+			},
+			{
 				headerName: "Status",
 				field: "status",
 				sortable: true,
@@ -661,6 +670,10 @@ function Site() {
 				<ThemeUI.FormField label="Client Mobile" name="client_mobile" error={backendErrors.client_mobile} required>
 					<ThemeUI.Input type="tel" name="client_mobile" value={formData.client_mobile} onChange={handleInputChange}
 						placeholder="10-digit mobile number" maxLength={10} error={backendErrors.client_mobile} />
+				</ThemeUI.FormField>
+				<ThemeUI.FormField label="Assign Engineer" name="assign_engineer" error={backendErrors.assign_engineer}>
+					<ThemeUI.Input name="assign_engineer" value={formData.assign_engineer} onChange={handleInputChange}
+						placeholder="e.g. Er. Karthikeyan S." error={backendErrors.assign_engineer} />
 				</ThemeUI.FormField>
 				<ThemeUI.FormField label="Total Budget (₹)" name="total_budget" error={backendErrors.total_budget} required>
 					<ThemeUI.Input type="number" name="total_budget" value={formData.total_budget} onChange={handleInputChange}

@@ -22,14 +22,9 @@ const Vendor        = sequelize.define(
         },
         phone: {
             type: DataTypes.STRING(15),
-            allowNull: false,
+            allowNull: true,
             unique: {
                 msg: 'Phone number must be unique'
-            },
-            validate: {
-                notEmpty: {
-                    msg: 'Phone number cannot be empty'
-                }
             }
         },
         email: {
@@ -48,12 +43,12 @@ const Vendor        = sequelize.define(
         },
         district: {
             type: DataTypes.STRING(100),
-            allowNull: false,
+            allowNull: true,
             comment: 'District - required field'
         },
         state: {
             type: DataTypes.STRING(100),
-            allowNull: false,
+            allowNull: true,
             comment: 'State - required field'
         },
         region: {

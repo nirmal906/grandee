@@ -395,13 +395,16 @@ export default function VendorWhatsAppModal({
 	const finalMessage = previewMessage + (customNote.trim() ? `\n\n${customNote.trim()}` : "")
 
 	// Validation per template
+	const hasPhone = !!vendor?.phone
 	const canSend = useMemo(() => {
+		if(!hasPhone) return false
 		if(activeTemplate === "enquiry" || activeTemplate === "received") return selectedMaterials.length > 0
 		if(activeTemplate === "payment") return !!paymentData.amount && Number(paymentData.amount) > 0
 		return false
-	}, [activeTemplate, selectedMaterials, paymentData.amount])
+	}, [hasPhone, activeTemplate, selectedMaterials, paymentData.amount])
 
 	const handleSend = () => {
+		if(!hasPhone) return
 		const phone   = vendor.phone?.replace(/\D/g, "")
 		const encoded = encodeURIComponent(finalMessage)
 		window.open(`https://wa.me/91${phone}?text=${encoded}`, "_blank")
@@ -439,7 +442,7 @@ export default function VendorWhatsAppModal({
 					{step === "pick" ? "WhatsApp Message" : tpl?.label}
 				</div>
 				<div style={{ fontSize: 11, color: "#9ca3af", fontWeight: 400 }}>
-					{vendor.name} · {vendor.phone}
+					{vendor.name} · {vendor.phone || "No phone on file"}
 				</div>
 			</div>
 		</div>
@@ -595,21 +598,28 @@ export default function VendorWhatsAppModal({
 					</div>
 
 					{/* Footer buttons */}
-					<div style={{ display: "flex", justifyContent: "flex-end", gap: 10, paddingTop: 2 }}>
-						<ThemeUI.Button
-							onClick={onClose}
-							gradientColors={{ start: theme.secondaryGradientStart, end: theme.secondaryGradientEnd }}
-						>
-							Cancel
-						</ThemeUI.Button>
-						<ThemeUI.Button
-							onClick={handleSend}
-							disabled={!canSend}
-							gradientColors={{ start: theme.primaryGradientStart, end: theme.primaryGradientEnd }}
-							direction={theme.gradientDirection}
-						>
-							Send via WhatsApp
-						</ThemeUI.Button>
+					<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, paddingTop: 2 }}>
+						{!hasPhone && (
+							<span style={{ fontSize: 12, color: "#dc2626", fontWeight: 500 }}>
+								This vendor has no phone number on file.
+							</span>
+						)}
+						<div style={{ display: "flex", gap: 10, marginLeft: "auto" }}>
+							<ThemeUI.Button
+								onClick={onClose}
+								gradientColors={{ start: theme.secondaryGradientStart, end: theme.secondaryGradientEnd }}
+							>
+								Cancel
+							</ThemeUI.Button>
+							<ThemeUI.Button
+								onClick={handleSend}
+								disabled={!canSend}
+								gradientColors={{ start: theme.primaryGradientStart, end: theme.primaryGradientEnd }}
+								direction={theme.gradientDirection}
+							>
+								Send via WhatsApp
+							</ThemeUI.Button>
+						</div>
 					</div>
 				</div>
 			)}

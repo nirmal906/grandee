@@ -35,7 +35,13 @@ const MaterialInvoice = sequelize.define(
             type: DataTypes.DECIMAL(10, 2),
             allowNull: false,
             defaultValue: 0.00,
-            comment: 'Shared additional charges (transport, etc.)'
+            comment: 'Shared additional charges (transport, etc.) — optional, defaults to 0'
+        },
+        manual_total_amount: {
+            type: DataTypes.DECIMAL(12, 2),
+            allowNull: true,
+            defaultValue: null,
+            comment: 'User-entered invoice total when item-wise breakdown is NOT used (manual mode). Null when the invoice uses item-wise breakdown, since the total is derived from items + additional charges instead.'
         },
         debit_entry: {
             type: DataTypes.DECIMAL(12, 2),

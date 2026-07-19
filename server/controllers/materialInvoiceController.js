@@ -14,6 +14,7 @@ const createInvoiceSnapshot = (invoice, items) => {
         date: invoice.date,
         invoice_number: invoice.invoice_number || null,
         additional_charges: invoice.additional_charges,
+        manual_total_amount: invoice.manual_total_amount ?? null,
         debit_entry: invoice.debit_entry,
         credit_entry: invoice.credit_entry,
         invoice_photo: invoice.invoice_photo || null,
@@ -56,7 +57,7 @@ const getChangedFields = (oldInvoice, newData) => {
     const changes = {};
     const fieldsToTrack = [
         'site_id', 'vendor_id', 'date', 'invoice_number',
-        'additional_charges', 'debit_entry', 'credit_entry',
+        'additional_charges', 'manual_total_amount', 'debit_entry', 'credit_entry',
         'status', 'invoice_photo', 'notes'
     ];
     fieldsToTrack.forEach(field => {
@@ -315,6 +316,9 @@ const materialInvoiceController = {
                 date: new Date(date),
                 invoice_number: autoInvoiceNumber,
                 additional_charges: Number(additional_charges || 0).toFixed(2),
+                manual_total_amount: hasItems
+                    ? null
+                    : parseFloat(parseFloat(req.body.manual_total_amount || 0).toFixed(2)),
                 debit_entry: debit_entry ? Number(debit_entry).toFixed(2) : '0.00',
                 credit_entry: credit_entry ? Number(credit_entry).toFixed(2) : '0.00',
                 invoice_photo: invoicePhotoFilename,
@@ -502,6 +506,8 @@ const materialInvoiceController = {
 
             // Total amount calculation for update
             let totalAmount = 0;
+            // undefined = leave manual_total_amount unchanged; null = clear it; number = persist it
+            let manualTotalAmountUpdate;
 
             if (hasNewItems) {
                 // New items provided — calculate from new items
@@ -510,14 +516,17 @@ const materialInvoiceController = {
                 }, 0);
                 const finalCharges = additional_charges !== undefined ? Number(additional_charges) : Number(invoice.additional_charges);
                 totalAmount = parseFloat((newItemsTotal + finalCharges).toFixed(2));
+                // Now using item-wise breakdown — clear any previously stored manual total
+                manualTotalAmountUpdate = null;
             } else if (items !== undefined && !hasNewItems) {
                 // items = [] (empty array sent) — manual mode, use manual_total_amount
                 totalAmount = parseFloat(parseFloat(req.body.manual_total_amount || 0).toFixed(2));
+                manualTotalAmountUpdate = totalAmount;
             } else {
                 // items not sent at all — check existing items
                 const hasExistingItems = invoice.items && invoice.items.length > 0;
                 if (hasExistingItems) {
-                    // existing items-ல் இருந்து calculate
+                    // existing items-ல் இருந்து calculate — still item-wise breakdown, nothing to persist
                     const existingItemsTotal = invoice.items.reduce((sum, item) => {
                         return sum + (parseFloat(item.quantity) || 0) * (parseFloat(item.rate) || 0);
                     }, 0);
@@ -527,6 +536,7 @@ const materialInvoiceController = {
                     // existing items இல்லை — manual total or existing debit+credit
                     if (req.body.manual_total_amount) {
                         totalAmount = parseFloat(parseFloat(req.body.manual_total_amount).toFixed(2));
+                        manualTotalAmountUpdate = totalAmount;
                     } else {
                         totalAmount = parseFloat((
                             (debit_entry !== undefined ? Number(debit_entry || 0) : Number(invoice.debit_entry)) +
@@ -568,6 +578,7 @@ const materialInvoiceController = {
             if (date !== undefined) updateData.date = new Date(date);
             if (invoice_number !== undefined) updateData.invoice_number = invoice_number || null;
             if (additional_charges !== undefined) updateData.additional_charges = Number(additional_charges || 0).toFixed(2);
+            if (manualTotalAmountUpdate !== undefined) updateData.manual_total_amount = manualTotalAmountUpdate;
             if (debit_entry !== undefined) updateData.debit_entry = debit_entry ? Number(debit_entry).toFixed(2) : '0.00';
             if (credit_entry !== undefined) updateData.credit_entry = credit_entry ? Number(credit_entry).toFixed(2) : '0.00';
             if (notes !== undefined) updateData.notes = notes || null;
@@ -604,6 +615,7 @@ const materialInvoiceController = {
                 vendor_id: updateData.vendor_id !== undefined ? updateData.vendor_id : invoice.vendor_id,
                 date: updateData.date !== undefined ? updateData.date : invoice.date,
                 additional_charges: updateData.additional_charges !== undefined ? updateData.additional_charges : invoice.additional_charges,
+                manual_total_amount: updateData.manual_total_amount !== undefined ? updateData.manual_total_amount : invoice.manual_total_amount,
                 debit_entry: updateData.debit_entry !== undefined ? updateData.debit_entry : invoice.debit_entry,
                 credit_entry: updateData.credit_entry !== undefined ? updateData.credit_entry : invoice.credit_entry,
                 notes: updateData.notes !== undefined ? updateData.notes : invoice.notes,

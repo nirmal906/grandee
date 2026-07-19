@@ -3,11 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { AgGridReact } from "ag-grid-react";
 import { themeQuartz } from "ag-grid-community";
 import Layout from './layout';
+import { toast } from "react-toastify";
 import {
 	Building2, Wallet, Package, Users, TrendingUp, TrendingDown,
 	RefreshCw, AlertCircle, IndianRupee, Search, Download,
 	CreditCard, Activity, ArrowDownCircle, ArrowUpCircle,
-	CheckCircle2, Loader, X
+	CheckCircle2, Loader, X, Eye
 } from 'lucide-react';
 import { useTheme } from "../context/themeContext";
 import { ThemeUI } from "../context/themeUI";
@@ -227,6 +228,91 @@ function PayOutModal({ site, onClose, onSuccess, theme }) {
 	);
 }
 
+// ─── Vendor Payment Modal ─────────────────────────────────────────────────────
+function VendorPaymentModal({ vendor, onClose, onSuccess, theme }) {
+	const [amount, setAmount]       = useState('');
+	const [submitting, setSubmitting] = useState(false);
+
+	const handleConfirmPayment = async () => {
+		if (!amount || Number(amount) <= 0) {
+			toast.error('Please enter a valid payment amount');
+			return;
+		}
+		setSubmitting(true);
+		try {
+			const token = localStorage.getItem('accessToken');
+			const res = await axios.post(
+				`/api/vendor-summary/${vendor.vendor_id}/payment`,
+				{ payment_amount: amount },
+				{ headers: { Authorization: `Bearer ${token}` } }
+			);
+			if (res.data.success) {
+				toast.success(res.data.message || 'Payment recorded successfully');
+				onSuccess();
+				onClose();
+			}
+		} catch (err) {
+			toast.error(err.response?.data?.message || 'Payment failed');
+		} finally {
+			setSubmitting(false);
+		}
+	};
+
+	return (
+		<div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+			<div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+			<div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
+				{/* Header */}
+				<div className="px-6 py-4 flex items-center justify-between flex-shrink-0 border-b border-gray-100">
+					<div>
+						<h2 className="text-lg font-bold text-gray-800">Make Payment — {vendor.vendor_name}</h2>
+						<p className="text-xs text-gray-500 mt-0.5">Payment is applied against the vendor's outstanding balance</p>
+					</div>
+					<button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+						<X className="h-5 w-5" />
+					</button>
+				</div>
+				{/* Body */}
+				<div className="flex-1 overflow-y-auto p-6">
+					<div className="space-y-4">
+						<div className="rounded-lg bg-gray-50 border border-gray-200 px-4 py-3 flex justify-between items-center">
+							<span className="text-sm text-gray-600">Outstanding Balance</span>
+							<span className="text-sm font-semibold text-red-600">{fmt(vendor.total_balance)}</span>
+						</div>
+						<ThemeUI.FormField label="Payment Amount (₹)" required>
+							<ThemeUI.Input
+								type="number"
+								step="0.01"
+								min="0.01"
+								value={amount}
+								onChange={(e) => setAmount(e.target.value)}
+								placeholder="0.00"
+							/>
+						</ThemeUI.FormField>
+					</div>
+				</div>
+				{/* Footer */}
+				<div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3 flex-shrink-0 bg-gray-50">
+					<ThemeUI.Button
+						onClick={onClose}
+						gradientColors={{ start: theme.secondaryGradientStart, end: theme.secondaryGradientEnd }}
+					>
+						Cancel
+					</ThemeUI.Button>
+					<ThemeUI.Button
+						onClick={handleConfirmPayment}
+						loading={submitting}
+						gradientColors={{ start: theme.primaryGradientStart, end: theme.primaryGradientEnd }}
+						direction={theme.gradientDirection}
+					>
+						Confirm Payment
+					</ThemeUI.Button>
+				</div>
+			</div>
+		</div>
+	);
+}
+
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 function Dashboard() {
 	const navigate  = useNavigate();
@@ -254,18 +340,21 @@ function Dashboard() {
 	const [materialPendingTotal, setMaterialPendingTotal] = useState(0);
 	const [labourPendingTotal,   setLabourPendingTotal]   = useState(0);
 	const [siteSummary,          setSiteSummary]          = useState([]);
+	const [vendorSummary,        setVendorSummary]        = useState([]);
 
 	// ── UI state ──
 	const [loading,       setLoading]       = useState(true);
 	const [error,         setError]         = useState(null);
 	const [isInitialLoad, setIsInitialLoad] = useState(true);
 	const [payOutSite,    setPayOutSite]    = useState(null);
+	const [paymentVendor, setPaymentVendor] = useState(null);
 
 	// Search / filter state
 	const [searchText,            setSearchText]            = useState('');
 	const [materialSearchText,    setMaterialSearchText]    = useState('');
 	const [labourSearchText,      setLabourSearchText]      = useState('');
 	const [siteSummarySearch,     setSiteSummarySearch]     = useState('');
+	const [vendorSummarySearch,   setVendorSummarySearch]   = useState('');
 	const [transactionTypeFilter, setTransactionTypeFilter] = useState('');
 	const [transactionItemFilter, setTransactionItemFilter] = useState('');
 
@@ -274,11 +363,28 @@ function Dashboard() {
 	const [materialGridApi,    setMaterialGridApi]    = useState(null);
 	const [labourGridApi,      setLabourGridApi]      = useState(null);
 	const [siteSummaryGridApi, setSiteSummaryGridApi] = useState(null);
+	const [vendorSummaryGridApi, setVendorSummaryGridApi] = useState(null);
 
 	// ── Counter config ──
 	// adminOnly: true  →  hidden from non-admin roles
 	const counterConfig = [
 		{ id: 'active-sites',     title: 'Active Sites',     dataKey: 'activeSites',    icon: Building2,   color: 'bg-blue-500',   route: '/site',          format: 'number'   },
+		{
+			id: 'total-vendors', title: 'Total Vendors', dataKey: 'totalVendors', icon: Users, color: 'bg-indigo-500', route: '/vendor', format: 'number',
+			subtext: (data) => {
+				const d = data?.totalVendors
+				if(!d) return null
+				return `${d.materialCount ?? 0} Material · ${d.labourCount ?? 0} Labour`
+			},
+		},
+		{
+			id: 'vendor-pending', title: 'Vendor Pending', dataKey: 'vendorPending', icon: IndianRupee, color: 'bg-pink-500', route: '/vendorsummary', format: 'currency',
+			subtext: (data) => {
+				const d = data?.vendorPending
+				if(!d) return null
+				return `${d.overdueCount ?? 0} vendor${d.overdueCount === 1 ? '' : 's'} overdue`
+			},
+		},
 		{ id: 'total-budget',     title: 'Total Budget',     dataKey: 'totalBudget',    icon: Wallet,      color: 'bg-green-500',  route: '/site',          format: 'currency', adminOnly: true },
 		{ id: 'client-paid',      title: 'Client Paid',      dataKey: 'clientPayments', icon: CreditCard,  color: 'bg-teal-500',   route: '/site',          format: 'currency', showOutstanding: true, adminOnly: true },
 		{ id: 'material-expense', title: 'Material Expense', dataKey: 'materialExpense',icon: IndianRupee, color: 'bg-orange-500', route: '/materialinvoice', format: 'currency' },
@@ -370,6 +476,16 @@ function Dashboard() {
 	// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [selectedSite]);
 
+	const fetchVendorSummary = useCallback(async () => {
+		try {
+			const token = localStorage.getItem('accessToken');
+			const res = await axios.get(`/api/vendor-summary`, {
+				headers: { Authorization: `Bearer ${token}` },
+			});
+			if (res.data.success) setVendorSummary(res.data.data || []);
+		} catch (err) { console.error('Vendor summary fetch error:', err); }
+	}, []);
+
 	const fetchAllData = useCallback(async (from, to, site) => {
 		const f = from ?? fromDate;
 		const t = to   ?? toDate;
@@ -380,6 +496,7 @@ function Dashboard() {
 			fetchMaterialPending(f, t, s),
 			fetchLabourPending(f, t, s),
 			fetchSiteSummary(s),
+			fetchVendorSummary(),
 		]);
 		setIsInitialLoad(false);
 	// eslint-disable-next-line react-hooks/exhaustive-deps
@@ -543,6 +660,10 @@ function Dashboard() {
 	const siteSummaryColumnDefs = useMemo(() => [
 		{ headerName: '#', width: 60, sortable: false, pinned: 'left', valueGetter: (p) => (p.node.rowIndex ?? 0) + 1 },
 		{ headerName: 'Site',          field: 'name',          sortable: true, flex: 1, minWidth: 150 },
+		{
+			headerName: 'Assign Engineer', field: 'assign_engineer', sortable: true, width: 170,
+			valueFormatter: (p) => p.value || '—',
+		},
 		{ headerName: 'Start Date',    field: 'start_date',    sortable: true, width: 130, valueFormatter: formatDateGrid },
 		{ headerName: 'Budget',        field: 'total_budget',  sortable: true, width: 140, valueFormatter: formatCurrencyGrid, cellStyle: { fontWeight: '600' } },
 		{ headerName: 'Total Expense', field: 'total_expense', sortable: true, width: 150, valueFormatter: formatCurrencyGrid, cellStyle: { color: '#b45309', fontWeight: '600' } },
@@ -578,6 +699,73 @@ function Dashboard() {
 				</div>
 			),
 		},
+	], [navigate]);
+
+	const vendorTypeLabel = (v) => {
+		const hasMaterial = (v.material_invoices_count || 0) > 0;
+		const hasLabour   = (v.labour_invoices_count   || 0) > 0;
+		if (hasMaterial && hasLabour) return 'Material & Labour';
+		if (hasMaterial) return 'Material';
+		if (hasLabour)   return 'Labour';
+		return '—';
+	};
+
+	const vendorSummaryColumnDefs = useMemo(() => [
+		{ headerName: '#', width: 60, sortable: false, pinned: 'left', valueGetter: (p) => (p.node.rowIndex ?? 0) + 1 },
+		{ headerName: 'Vendor Name', field: 'vendor_name', sortable: true, flex: 1, minWidth: 170, cellStyle: { fontWeight: '600' } },
+		{
+			headerName: 'Type', width: 150, sortable: false,
+			valueGetter: (p) => vendorTypeLabel(p.data),
+			cellRenderer: (p) => {
+				const label = vendorTypeLabel(p.data);
+				const color = label === 'Material' ? 'bg-blue-100 text-blue-700'
+					: label === 'Labour' ? 'bg-purple-100 text-purple-700'
+					: label === 'Material & Labour' ? 'bg-amber-100 text-amber-700'
+					: 'bg-gray-100 text-gray-500';
+				return <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${color}`}>{label}</span>;
+			},
+		},
+		{
+			headerName: 'Pending Charges', field: 'total_balance', sortable: true, width: 160,
+			valueFormatter: formatCurrencyGrid,
+			cellStyle: (p) => ({ color: p.value > 0 ? '#dc2626' : '#6b7280', fontWeight: '700' }),
+		},
+		{ headerName: 'Last Purchase',  field: 'last_purchase',  sortable: true, width: 140, valueFormatter: formatDateGrid },
+		{ headerName: 'Last Paid Date', field: 'last_paid_date', sortable: true, width: 140, valueFormatter: formatDateGrid },
+		{
+			headerName: 'Actions', width: 140, sortable: false, pinned: 'right',
+			cellRenderer: (p) => (
+				<div className="flex items-center gap-2 h-full">
+					<button
+						onClick={() => navigate('/vendorsummary')}
+						title="View vendor"
+						className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-100 transition-colors"
+					>
+						<Eye className="h-4 w-4" />
+					</button>
+					<button
+						onClick={() => setPaymentVendor(p.data)}
+						title="Make payment"
+						disabled={!(p.data.total_balance > 0)}
+						className={`p-1.5 rounded-lg transition-colors ${
+							p.data.total_balance > 0
+								? 'text-emerald-600 hover:bg-emerald-100'
+								: 'text-gray-300 cursor-not-allowed'
+						}`}
+					>
+						<CreditCard className="h-4 w-4" />
+					</button>
+					<button
+						onClick={() => exportVendorRow(p.data)}
+						title="Export"
+						className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
+					>
+						<Download className="h-4 w-4" />
+					</button>
+				</div>
+			),
+		},
+	// eslint-disable-next-line react-hooks/exhaustive-deps
 	], [navigate]);
 
 	const defaultColDef = useMemo(() => ({ resizable: true, sortable: true, filter: true }), []);
@@ -617,11 +805,18 @@ function Dashboard() {
 		);
 	}, [siteSummary, siteSummarySearch]);
 
+	const filteredVendorSummary = useMemo(() => {
+		if (!vendorSummarySearch) return vendorSummary;
+		const q = vendorSummarySearch.toLowerCase();
+		return vendorSummary.filter(v => (v.vendor_name || '').toLowerCase().includes(q));
+	}, [vendorSummary, vendorSummarySearch]);
+
 	// ─── Grid / export handlers ───────────────────────────────────────────────
 	const onGridReady            = useCallback((p) => setGridApi(p.api),            []);
 	const onMaterialGridReady    = useCallback((p) => setMaterialGridApi(p.api),    []);
 	const onLabourGridReady      = useCallback((p) => setLabourGridApi(p.api),      []);
 	const onSiteSummaryGridReady = useCallback((p) => setSiteSummaryGridApi(p.api), []);
+	const onVendorSummaryGridReady = useCallback((p) => setVendorSummaryGridApi(p.api), []);
 
 	const onSearchChange = useCallback((e) => {
 		setSearchText(e.target.value);
@@ -642,6 +837,44 @@ function Dashboard() {
 	const exportMaterialPendingToCSV = () => materialGridApi?.exportDataAsCsv({ fileName: `material_pending_${fromDate}_to_${toDate}.csv` });
 	const exportLabourPendingToCSV   = () => labourGridApi?.exportDataAsCsv({ fileName: `labour_pending_${fromDate}_to_${toDate}.csv` });
 	const exportSiteSummaryToCSV     = () => siteSummaryGridApi?.exportDataAsCsv({ fileName: 'site_summary.csv' });
+	const exportVendorSummaryToCSV   = () => vendorSummaryGridApi?.exportDataAsCsv({ fileName: 'vendor_summary.csv' });
+
+	const onVendorSummarySearchChange = useCallback((e) => {
+		setVendorSummarySearch(e.target.value);
+		vendorSummaryGridApi?.setGridOption('quickFilterText', e.target.value);
+	}, [vendorSummaryGridApi]);
+
+	// Downloads a small CSV of one vendor's outstanding invoices
+	const exportVendorRow = useCallback(async (vendor) => {
+		try {
+			const token = localStorage.getItem('accessToken');
+			const res = await axios.get(`/api/vendor-summary/${vendor.vendor_id}/pending-invoices`, {
+				headers: { Authorization: `Bearer ${token}` },
+			});
+			const rows = res.data?.data || [];
+			const header = ['Invoice #', 'Type', 'Site', 'Date', 'Amount Due'];
+			const lines = [header.join(',')];
+			rows.forEach(r => {
+				lines.push([
+					r.invoice_number || r.id,
+					r.typelabel,
+					r.site?.name || '',
+					r.date ? new Date(r.date).toLocaleDateString() : '',
+					parseFloat(r.debit_entry || 0).toFixed(2),
+				].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
+			});
+			const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+			const url  = URL.createObjectURL(blob);
+			const a    = document.createElement('a');
+			a.href = url;
+			a.download = `${vendor.vendor_name.replace(/\s+/g, '_')}_pending_invoices.csv`;
+			a.click();
+			URL.revokeObjectURL(url);
+		} catch (err) {
+			console.error('Vendor export error:', err);
+			toast.error('Failed to export vendor invoices');
+		}
+	}, []);
 
 	// ─── Shared AG-Grid theme params ──────────────────────────────────────────
 	const gridThemeBase  = { spacing: 7, headerHeight: 45, headerFontSize: 14, fontSize: 13, headerTextColor: 'white' };
@@ -718,7 +951,7 @@ function Dashboard() {
 
 				{/* ── Counter Boxes ── */}
 				<div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6 ${
-					selectedSite ? 'lg:grid-cols-3 xl:grid-cols-6' : 'lg:grid-cols-2 xl:grid-cols-4'
+					selectedSite ? 'lg:grid-cols-4 xl:grid-cols-4' : 'lg:grid-cols-3 xl:grid-cols-6'
 				}`}>
 					{counterConfig
 						.filter(c => isAdmin || !c.adminOnly)       
@@ -762,7 +995,12 @@ function Dashboard() {
 														</div>
 													</div>
 												)}
-												{counter.dataKey !== 'activeSites' && percentage === undefined && !counter.showOutstanding && (
+												{percentage === undefined && counter.subtext && counter.subtext(dashboardData) && (
+													<div className="flex items-center mt-1">
+														<span className="text-xs font-medium text-gray-500">{counter.subtext(dashboardData)}</span>
+													</div>
+												)}
+												{counter.dataKey !== 'activeSites' && percentage === undefined && !counter.showOutstanding && !counter.subtext && (
 													<div className="flex items-center mt-1">
 														<span className={`text-xs font-medium flex items-center ${
 															changeType === 'positive' ? 'text-green-600' :
@@ -924,6 +1162,51 @@ function Dashboard() {
 							paginationPageSize={10}
 							paginationPageSizeSelector={[10, 20, 50]}
 							onGridReady={onSiteSummaryGridReady}
+						/>
+					</div>
+				</div>
+
+				{/* ── Vendor Summary Table ── */}
+				<div className="mt-8">
+					<div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+						<div>
+							<h2 className="text-xl font-bold">Vendor Summary</h2>
+							<p className="text-sm text-gray-600 mt-1">Outstanding balances and payment actions, by vendor</p>
+						</div>
+						<div className="flex gap-2">
+							<div className="relative">
+								<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+								<input
+									type="text"
+									value={vendorSummarySearch}
+									onChange={onVendorSummarySearchChange}
+									placeholder="Search vendor..."
+									className="pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-48"
+								/>
+							</div>
+							<ThemeUI.Button
+								onClick={exportVendorSummaryToCSV}
+								gradientColors={{ start: theme.primaryGradientStart, end: theme.primaryGradientEnd }}
+								direction={theme.gradientDirection}
+							>
+								<Download className="h-4 w-4 me-2" /> Export
+							</ThemeUI.Button>
+						</div>
+					</div>
+					<div style={headerGradientStyle}>
+						<AgGridReact
+							className="custom-ag-grid"
+							domLayout="autoHeight"
+							theme={themeQuartz.withParams(gridThemeBase)}
+							defaultColDef={{ resizable: true, sortable: true, filter: false }}
+							rowData={filteredVendorSummary}
+							columnDefs={vendorSummaryColumnDefs}
+							rowHeight={56}
+							pagination={true}
+							paginationPageSize={10}
+							paginationPageSizeSelector={[10, 20, 50]}
+							onGridReady={onVendorSummaryGridReady}
+							overlayNoRowsTemplate={'<span class="text-sm text-gray-500">No vendor activity yet</span>'}
 						/>
 					</div>
 				</div>
@@ -1115,6 +1398,14 @@ function Dashboard() {
 					theme={theme}
 					onClose={() => setPayOutSite(null)}
 					onSuccess={() => fetchSiteSummary(selectedSite)}
+				/>
+			)}
+			{paymentVendor && (
+				<VendorPaymentModal
+					vendor={paymentVendor}
+					theme={theme}
+					onClose={() => setPaymentVendor(null)}
+					onSuccess={() => { fetchVendorSummary(); fetchDashboardData(fromDate, toDate, selectedSite); }}
 				/>
 			)}
 
