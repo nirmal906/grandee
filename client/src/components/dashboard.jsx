@@ -7,7 +7,7 @@ import { toast } from "react-toastify";
 import {
 	Building2, Wallet, Package, Users, TrendingUp, TrendingDown,
 	RefreshCw, AlertCircle, IndianRupee, Search, Download,
-	CreditCard, Activity, ArrowDownCircle, ArrowUpCircle,
+	CreditCard, Activity, ArrowDownCircle,
 	CheckCircle2, Loader, X, Eye
 } from 'lucide-react';
 import { useTheme } from "../context/themeContext";
@@ -30,203 +30,6 @@ const formatDateGrid = (params) => {
 	if (!params.value) return '';
 	return new Date(params.value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 };
-
-// ─── Pay-Out Modal ────────────────────────────────────────────────────────────
-function PayOutModal({ site, onClose, onSuccess, theme }) {
-	const [data, setData]       = useState(null);
-	const [loading, setLoading] = useState(true);
-	const [marking, setMarking] = useState(null);
-	const [search, setSearch]   = useState('');
-	const [tab, setTab]         = useState('all');
-
-	const fetchPending = useCallback(async () => {
-		setLoading(true);
-		try {
-			const token = localStorage.getItem('accessToken');
-			const res = await axios.get(
-				`/api/dashboard/payout-pending/${site.id}`,
-				{ headers: { Authorization: `Bearer ${token}` } }
-			);
-			if (res.data.success) setData(res.data);
-		} catch (err) {
-			console.error('Payout fetch error:', err);
-		} finally {
-			setLoading(false);
-		}
-	}, [site.id]);
-
-	useEffect(() => { fetchPending(); }, [fetchPending]);
-
-	const handleMarkPaid = async (entry) => {
-		const key = `${entry.type}-${entry.id}`;
-		setMarking(key);
-		try {
-			const token = localStorage.getItem('accessToken');
-			const url = entry.type === 'material'
-				? `/api/material-invoice/${entry.id}/mark-paid`
-				: `/api/labour-invoice/${entry.id}/mark-paid`;
-			const res = await axios.patch(url, {}, { headers: { Authorization: `Bearer ${token}` } });
-			if (res.data.success) { await fetchPending(); onSuccess(); }
-		} catch (err) {
-			console.error('Mark paid error:', err);
-		} finally {
-			setMarking(null);
-		}
-	};
-
-	const allEntries = useMemo(() => {
-		if (!data) return [];
-		const pool =
-			tab === 'material' ? (data.data.materials || []) :
-			tab === 'labour'   ? (data.data.labours   || []) :
-			[...(data.data.materials || []), ...(data.data.labours || [])];
-		return pool.filter(e =>
-			!search ||
-			e.name.toLowerCase().includes(search.toLowerCase()) ||
-			(e.vendor || '').toLowerCase().includes(search.toLowerCase())
-		);
-	}, [data, tab, search]);
-
-	return (
-		<div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-			<div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-			<div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
-				{/* Header */}
-				<div
-					className="px-6 py-4 flex items-center justify-between flex-shrink-0"
-					style={{ background: 'linear-gradient(135deg, #dc2626, #b91c1c)' }}
-				>
-					<div className="flex items-center gap-3">
-						<div className="bg-white/20 rounded-lg p-2">
-							<ArrowUpCircle className="h-5 w-5 text-white" />
-						</div>
-						<div>
-							<h2 className="text-lg font-bold text-white">Pending Payouts</h2>
-							<p className="text-xs text-white/80">{site.name}</p>
-						</div>
-					</div>
-					<button onClick={onClose} className="text-white/80 hover:text-white">
-						<X className="h-5 w-5" />
-					</button>
-				</div>
-				{/* Summary strip */}
-				{data && (
-					<div className="grid grid-cols-3 border-b border-gray-100 flex-shrink-0">
-						{[
-							{ label: 'Total Pending', val: data.total_pending?.total,    color: 'text-red-600'    },
-							{ label: 'Material',      val: data.total_pending?.material, color: 'text-orange-600' },
-							{ label: 'Labour',        val: data.total_pending?.labour,   color: 'text-purple-600' },
-						].map(({ label, val, color }) => (
-							<div key={label} className="p-3 text-center">
-								<p className="text-xs text-gray-500 mb-0.5">{label}</p>
-								<p className={`text-sm font-bold ${color}`}>{fmt(val)}</p>
-							</div>
-						))}
-					</div>
-				)}
-				{/* Filters */}
-				<div className="px-4 py-3 border-b border-gray-100 flex items-center gap-3 flex-shrink-0">
-					<div className="flex-1 flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-2">
-						<Search className="h-4 w-4 text-gray-400 flex-shrink-0" />
-						<input
-							value={search}
-							onChange={e => setSearch(e.target.value)}
-							placeholder="Search entries..."
-							className="bg-transparent text-sm flex-1 focus:outline-none"
-						/>
-					</div>
-					<div className="flex bg-gray-100 rounded-lg p-1 gap-1">
-						{[['all', 'All'], ['material', 'Material'], ['labour', 'Labour']].map(([v, l]) => (
-							<button
-								key={v}
-								onClick={() => setTab(v)}
-								className={`px-3 py-1 rounded-md text-xs font-semibold transition-all ${
-									tab === v ? 'bg-white shadow text-gray-800' : 'text-gray-500 hover:text-gray-700'
-								}`}
-							>
-								{l}
-							</button>
-						))}
-					</div>
-				</div>
-				{/* Entry list */}
-				<div className="flex-1 overflow-y-auto p-4 space-y-2">
-					{loading ? (
-						<div className="flex flex-col items-center justify-center py-12 gap-3">
-							<Loader className="h-8 w-8 animate-spin text-gray-400" />
-							<p className="text-sm text-gray-500">Loading pending entries…</p>
-						</div>
-					) : allEntries.length === 0 ? (
-						<div className="flex flex-col items-center justify-center py-12 gap-3">
-							<CheckCircle2 className="h-10 w-10 text-emerald-400" />
-							<p className="text-base font-semibold text-gray-600">No Pending Payments</p>
-							<p className="text-sm text-gray-400">All entries for this site are cleared!</p>
-						</div>
-					) : (
-						allEntries.map(entry => {
-							const key      = `${entry.type}-${entry.id}`;
-							const isPaying = marking === key;
-							return (
-								<div
-									key={key}
-									className={`flex items-center gap-3 p-3 rounded-lg border transition-all ${
-										isPaying ? 'border-emerald-300 bg-emerald-50' : 'border-gray-200 bg-white hover:border-gray-300'
-									}`}
-								>
-									<div className={`flex-shrink-0 rounded-lg p-2 ${entry.type === 'material' ? 'bg-orange-100' : 'bg-purple-100'}`}>
-										{entry.type === 'material'
-											? <Package className="h-4 w-4 text-orange-600" />
-											: <Users   className="h-4 w-4 text-purple-600" />}
-									</div>
-									<div className="flex-1 min-w-0">
-										<div className="flex items-center gap-2">
-											<p className="text-sm font-semibold text-gray-800 truncate">{entry.name}</p>
-											{entry.vendor && entry.vendor !== '-' && (
-												<span className="text-xs text-gray-500 truncate">· {entry.vendor}</span>
-											)}
-										</div>
-										<p className="text-xs text-gray-500 mt-0.5">
-											{fmtDate(entry.date)} · {entry.quantity} × {fmt(entry.rate)}
-											{entry.additional_charges > 0 && ` + ${fmt(entry.additional_charges)}`}
-										</p>
-									</div>
-									<div className="flex-shrink-0 text-right mr-2">
-										<p className="text-xs text-gray-500">Pending</p>
-										<p className="text-sm font-bold text-red-600">{fmt(entry.pending_amount)}</p>
-									</div>
-									<button
-										onClick={() => handleMarkPaid(entry)}
-										disabled={isPaying}
-										className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-											isPaying
-												? 'bg-emerald-500 text-white cursor-not-allowed'
-												: 'bg-gray-100 text-gray-700 hover:bg-emerald-500 hover:text-white border border-gray-300 hover:border-emerald-500'
-										}`}
-									>
-										{isPaying ? <Loader className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
-										{isPaying ? 'Paying…' : 'Mark Paid'}
-									</button>
-								</div>
-							);
-						})
-					)}
-				</div>
-				{/* Footer */}
-				<div className="px-6 py-3 border-t border-gray-100 flex justify-between items-center flex-shrink-0 bg-gray-50">
-					<p className="text-xs text-gray-500">
-						{allEntries.length} pending {allEntries.length === 1 ? 'entry' : 'entries'}
-					</p>
-					<button
-						onClick={onClose}
-						className="px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors"
-					>
-						Close
-					</button>
-				</div>
-			</div>
-		</div>
-	);
-}
 
 // ─── Vendor Payment Modal ─────────────────────────────────────────────────────
 function VendorPaymentModal({ vendor, onClose, onSuccess, theme }) {
@@ -346,7 +149,6 @@ function Dashboard() {
 	const [loading,       setLoading]       = useState(true);
 	const [error,         setError]         = useState(null);
 	const [isInitialLoad, setIsInitialLoad] = useState(true);
-	const [payOutSite,    setPayOutSite]    = useState(null);
 	const [paymentVendor, setPaymentVendor] = useState(null);
 
 	// Search / filter state
@@ -674,7 +476,7 @@ function Dashboard() {
 			cellStyle: (p) => ({ color: p.value > 0 ? '#dc2626' : '#6b7280', fontWeight: '600' }),
 		},
 		{
-			headerName: 'Actions', width: 200, sortable: false, pinned: 'right',
+			headerName: 'Actions', width: 110, sortable: false, pinned: 'right',
 			cellRenderer: (p) => (
 				<div className="flex items-center gap-2 h-full">
 					<button
@@ -682,19 +484,6 @@ function Dashboard() {
 						className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors"
 					>
 						<ArrowDownCircle className="h-3 w-3" /> Pay In
-					</button>
-					<button
-						onClick={() => setPayOutSite(p.data)}
-						className={`relative flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
-							p.data.total_pending > 0
-								? 'bg-red-100 text-red-700 hover:bg-red-200'
-								: 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-						}`}
-					>
-						<ArrowUpCircle className="h-3 w-3" /> Pay Out
-						{p.data.total_pending > 0 && (
-							<span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-						)}
 					</button>
 				</div>
 			),
@@ -746,12 +535,7 @@ function Dashboard() {
 					<button
 						onClick={() => setPaymentVendor(p.data)}
 						title="Make payment"
-						disabled={!(p.data.total_balance > 0)}
-						className={`p-1.5 rounded-lg transition-colors ${
-							p.data.total_balance > 0
-								? 'text-emerald-600 hover:bg-emerald-100'
-								: 'text-gray-300 cursor-not-allowed'
-						}`}
+						className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-100 transition-colors"
 					>
 						<CreditCard className="h-4 w-4" />
 					</button>
@@ -1392,14 +1176,6 @@ function Dashboard() {
 			</div>
 
 			{/* ── Modals ── */}
-			{payOutSite && (
-				<PayOutModal
-					site={payOutSite}
-					theme={theme}
-					onClose={() => setPayOutSite(null)}
-					onSuccess={() => fetchSiteSummary(selectedSite)}
-				/>
-			)}
 			{paymentVendor && (
 				<VendorPaymentModal
 					vendor={paymentVendor}

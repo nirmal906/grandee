@@ -266,9 +266,18 @@ const labourInvoiceController = {
                 await transaction.rollback();
                 return res.status(400).json({ success: false, message: 'Validation failed', errors: { items: 'Invalid items JSON format' } });
             }
+            if (!Array.isArray(items)) items = [];
 
-            if (!Array.isArray(items) || items.length === 0) {
-                errors.items = 'At least one labour item is required';
+            // Item-wise breakdown is optional for admin — admin-ஆ இருந்தா, items இல்லாம
+            // manual_total_amount கொடுத்தும் invoice create பண்ணலாம். Non-admin submissions
+            // always require item-wise breakdown (that's the whole point of their approval request).
+            const hasItems = items.length > 0;
+            if (!hasItems) {
+                if (!isAdmin) {
+                    errors.items = 'At least one labour item is required';
+                } else if (req.body.manual_total_amount === undefined || req.body.manual_total_amount === null || req.body.manual_total_amount === '') {
+                    errors.items = 'Add at least one labour item, or enter an invoice total amount';
+                }
             }
 
             // ── Common validations ──
@@ -348,13 +357,25 @@ const labourInvoiceController = {
                     else if (Number(credit_entry) > 99999999.99)         errors.credit_entry = 'Credit entry is too large';
                 }
 
-                // Validate total = sum of line totals = debit + credit
-                if (itemErrors.length === 0 && !errors.debit_entry && !errors.credit_entry && Array.isArray(items) && items.length > 0) {
+                // Manual total amount validation — items இல்லாத போது required
+                if (!hasItems) {
+                    const manualTotal = parseFloat(req.body.manual_total_amount);
+                    if (!req.body.manual_total_amount || isNaN(manualTotal) || manualTotal <= 0) {
+                        errors.manual_total_amount = 'Invoice total amount is required';
+                    }
+                }
+
+                // Validate total = sum of line totals (or manual total) = debit + credit
+                if (itemErrors.length === 0 && !errors.debit_entry && !errors.credit_entry && !errors.manual_total_amount) {
                     let totalAmount = 0;
-                    for (const item of items) {
-                        const workers = parseFloat(item.no_of_workers) || 0;
-                        const rate    = parseFloat(item.rate_per_worker) || 0;
-                        totalAmount  += parseFloat((workers * rate).toFixed(2));
+                    if (hasItems) {
+                        for (const item of items) {
+                            const workers = parseFloat(item.no_of_workers) || 0;
+                            const rate    = parseFloat(item.rate_per_worker) || 0;
+                            totalAmount  += parseFloat((workers * rate).toFixed(2));
+                        }
+                    } else {
+                        totalAmount = parseFloat(parseFloat(req.body.manual_total_amount || 0).toFixed(2));
                     }
                     totalAmount = parseFloat(totalAmount.toFixed(2));
 
@@ -384,6 +405,9 @@ const labourInvoiceController = {
                 date:            new Date(date),
                 invoice_number:  autoInvoiceNumber,
                 notes:           notes || null,
+                manual_total_amount: isAdmin && !hasItems
+                    ? parseFloat(parseFloat(req.body.manual_total_amount || 0).toFixed(2))
+                    : null,
                 debit_entry:     isAdmin ? (debit_entry  ? Number(debit_entry).toFixed(2)  : 0.00) : null,
                 credit_entry:    isAdmin ? (credit_entry ? Number(credit_entry).toFixed(2) : 0.00) : null,
                 status:          isAdmin ? (status !== undefined ? Number(status) : 1) : 1,
@@ -397,15 +421,17 @@ const labourInvoiceController = {
 
             const invoice = await LabourInvoice.create(invoiceData, { transaction });
 
-            // ── Create items ──
-            const itemRecords = items.map((item) => ({
-                invoice_id:      invoice.id,
-                labour_id:       item.labour_id,
-                no_of_workers:   Number(item.no_of_workers),
-                rate_per_worker: isAdmin ? Number(item.rate_per_worker).toFixed(2) : null,
-            }));
+            // ── Create items — only when item-wise breakdown is used ──
+            if (hasItems) {
+                const itemRecords = items.map((item) => ({
+                    invoice_id:      invoice.id,
+                    labour_id:       item.labour_id,
+                    no_of_workers:   Number(item.no_of_workers),
+                    rate_per_worker: isAdmin ? Number(item.rate_per_worker).toFixed(2) : null,
+                }));
 
-            await LabourInvoiceItem.bulkCreate(itemRecords, { transaction });
+                await LabourInvoiceItem.bulkCreate(itemRecords, { transaction });
+            }
             await transaction.commit();
 
             res.status(201).json({
@@ -462,11 +488,15 @@ const labourInvoiceController = {
                     await transaction.rollback();
                     return res.status(400).json({ success: false, message: 'Validation failed', errors: { items: 'Invalid items JSON format' } });
                 }
+                if (!Array.isArray(items)) items = [];
 
-                if (!Array.isArray(items) || items.length === 0) {
+                // items = [] (empty array) means switching to manual-total mode — admin only
+                if (items.length === 0 && !isAdmin) {
                     errors.items = 'At least one labour item is required';
                 }
             }
+
+            const hasNewItems = Array.isArray(items) && items.length > 0;
 
             // ── Common validations ──
             if (site_id !== undefined) {
@@ -546,13 +576,25 @@ const labourInvoiceController = {
                     else if (Number(credit_entry) > 99999999.99)         errors.credit_entry = 'Credit entry is too large';
                 }
 
-                // Validate total = sum of line totals = debit + credit
-                if (itemErrors.length === 0 && !errors.debit_entry && !errors.credit_entry && Array.isArray(items) && items.length > 0) {
+                // Manual total amount validation — switching to manual mode (items = []) needs it
+                if (items !== undefined && !hasNewItems) {
+                    const manualTotal = parseFloat(req.body.manual_total_amount);
+                    if (!req.body.manual_total_amount || isNaN(manualTotal) || manualTotal <= 0) {
+                        errors.manual_total_amount = 'Invoice total amount is required';
+                    }
+                }
+
+                // Validate total = sum of line totals (or manual total) = debit + credit
+                if (itemErrors.length === 0 && !errors.debit_entry && !errors.credit_entry && !errors.manual_total_amount && items !== undefined) {
                     let totalAmount = 0;
-                    for (const item of items) {
-                        const workers = parseFloat(item.no_of_workers) || 0;
-                        const rate    = parseFloat(item.rate_per_worker) || 0;
-                        totalAmount  += parseFloat((workers * rate).toFixed(2));
+                    if (hasNewItems) {
+                        for (const item of items) {
+                            const workers = parseFloat(item.no_of_workers) || 0;
+                            const rate    = parseFloat(item.rate_per_worker) || 0;
+                            totalAmount  += parseFloat((workers * rate).toFixed(2));
+                        }
+                    } else {
+                        totalAmount = parseFloat(parseFloat(req.body.manual_total_amount || 0).toFixed(2));
                     }
                     totalAmount = parseFloat(totalAmount.toFixed(2));
 
@@ -585,22 +627,29 @@ const labourInvoiceController = {
                 if (debit_entry  !== undefined) updateData.debit_entry  = debit_entry  ? Number(debit_entry).toFixed(2)  : 0.00;
                 if (credit_entry !== undefined) updateData.credit_entry = credit_entry ? Number(credit_entry).toFixed(2) : 0.00;
                 if (status       !== undefined) updateData.status       = Number(status);
+                if (items        !== undefined) {
+                    updateData.manual_total_amount = hasNewItems
+                        ? null
+                        : parseFloat(parseFloat(req.body.manual_total_amount || 0).toFixed(2));
+                }
             }
 
             await labourInvoice.update(updateData, { transaction });
 
-            // ── Replace items if provided ──
-            if (Array.isArray(items) && items.length > 0) {
+            // ── Replace items if provided (items = [] switches the invoice to manual-total mode) ──
+            if (items !== undefined) {
                 await LabourInvoiceItem.destroy({ where: { invoice_id: id }, transaction });
 
-                const itemRecords = items.map((item) => ({
-                    invoice_id:      id,
-                    labour_id:       item.labour_id,
-                    no_of_workers:   Number(item.no_of_workers),
-                    rate_per_worker: isAdmin && item.rate_per_worker !== undefined ? Number(item.rate_per_worker).toFixed(2) : null,
-                }));
+                if (hasNewItems) {
+                    const itemRecords = items.map((item) => ({
+                        invoice_id:      id,
+                        labour_id:       item.labour_id,
+                        no_of_workers:   Number(item.no_of_workers),
+                        rate_per_worker: isAdmin && item.rate_per_worker !== undefined ? Number(item.rate_per_worker).toFixed(2) : null,
+                    }));
 
-                await LabourInvoiceItem.bulkCreate(itemRecords, { transaction });
+                    await LabourInvoiceItem.bulkCreate(itemRecords, { transaction });
+                }
             }
 
             await transaction.commit();

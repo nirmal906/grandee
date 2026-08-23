@@ -1105,20 +1105,6 @@ function MaterialInvoice() {
                 {/* Charges & Payment */}
                 <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-4">
                     {/* Additional charges — breakdown mode-ல் மட்டும் காட்டு */}
-                    {useItemBreakdown && (
-                        <ThemeUI.FormField label="Additional Charges (₹)" name="additional_charges" error={backendErrors.additional_charges}>
-                            <ThemeUI.Input
-                                name="additional_charges"
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                value={formData.additional_charges}
-                                onChange={handleAdditionalChargesChange}
-                                placeholder="0.00"
-                                error={backendErrors.additional_charges}
-                            />
-                        </ThemeUI.FormField>
-                    )}
 
                     {/* Total Amount — breakdown mode-ல் readonly show, manual mode-ல் hide (already shown above) */}
                     {useItemBreakdown && (
@@ -1131,6 +1117,19 @@ function MaterialInvoice() {
                             />
                         </ThemeUI.FormField>
                     )}
+
+                    <ThemeUI.FormField label="Additional Charges (₹)" name="additional_charges" error={backendErrors.additional_charges}>
+                        <ThemeUI.Input
+                            name="additional_charges"
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={formData.additional_charges}
+                            onChange={handleAdditionalChargesChange}
+                            placeholder="0.00"
+                            error={backendErrors.additional_charges}
+                        />
+                    </ThemeUI.FormField>
 
                     <div>
                         <div className="flex items-center justify-between mb-1.5">

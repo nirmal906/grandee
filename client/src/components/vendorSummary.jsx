@@ -6,7 +6,7 @@ import { themeQuartz } from "ag-grid-community"
 import Layout from "./layout"
 import { useTheme } from "../context/themeContext"
 import { ThemeUI } from "../context/themeUI"
-import { ChevronRight, Search, Eye, ArrowLeft, Filter, IndianRupee, Loader } from "lucide-react"
+import { ChevronRight, Search, Eye, ArrowLeft, Filter, IndianRupee, Loader, CheckCircle2, AlertTriangle, Wallet, Layers } from "lucide-react"
 import Modal from "./modal"
 import Offcanvas from "./offcanvas"
 import NoRowsOverlay from "./noRowsOverlay"
@@ -40,6 +40,29 @@ function VendorSummary() {
     const [paymentVendor,    setPaymentVendor]       = useState(null)
     const [paymentAmount,    setPaymentAmount]        = useState('')
     const [paymentLoading,   setPaymentLoading]       = useState(false)
+
+    // Payment modal — tab (standard payoff vs. advance/additional split payment)
+    const [paymentTab, setPaymentTab] = useState('standard') // 'standard' | 'split'
+
+    // Split payment (Advance / Additional Payment)
+    const [activeSites,        setActiveSites]        = useState([])
+    const [activeSitesLoading, setActiveSitesLoading]  = useState(false)
+    const [splitPaymentTypes,  setSplitPaymentTypes]   = useState([]) // ['advance', 'additional']
+    const [splitAmount,        setSplitAmount]         = useState('')
+    const [splitDate,          setSplitDate]           = useState(() => new Date().toISOString().slice(0, 10))
+    const [splitMethod,        setSplitMethod]         = useState('bank_transfer')
+    const [splitReference,     setSplitReference]      = useState('')
+    const [splitAllocations,   setSplitAllocations]    = useState({}) // { [site_id]: amountString }
+    const [splitIncludedSites, setSplitIncludedSites]  = useState({}) // { [site_id]: boolean }
+    const [splitLoading,       setSplitLoading]        = useState(false)
+
+    const PAYMENT_METHOD_OPTIONS = [
+        { value: 'bank_transfer', label: 'Bank Transfer' },
+        { value: 'cash',          label: 'Cash' },
+        { value: 'upi',           label: 'UPI' },
+        { value: 'cheque',        label: 'Cheque' },
+        { value: 'other',         label: 'Other' },
+    ]
 
     // Permissions
     const [permissions, setPermissions] = useState({
@@ -146,10 +169,40 @@ function VendorSummary() {
         return `₹${num.toFixed(2)}`
     }
 
+    const fetchActiveSitesForPayment = useCallback(async () => {
+        setActiveSitesLoading(true)
+        try {
+            const res = await axios.get(`/api/material-invoice/active-sites`)
+            if (res.data.success) {
+                setActiveSites(res.data.data || [])
+            }
+        } catch (err) {
+            console.error("Error fetching active sites:", err)
+            toast.error(err.response?.data?.message || "Failed to fetch active sites")
+            setActiveSites([])
+        } finally {
+            setActiveSitesLoading(false)
+        }
+    }, [])
+
     const openPaymentModal = (vendor) => {
+        const hasOutstanding = Number(vendor.total_balance) > 0
+
         setPaymentVendor(vendor)
         setPaymentAmount('')
+        setPaymentTab(hasOutstanding ? 'standard' : 'split')
+
+        // Reset split-payment state for a clean modal every time it opens
+        setSplitPaymentTypes([])
+        setSplitAmount('')
+        setSplitDate(new Date().toISOString().slice(0, 10))
+        setSplitMethod('bank_transfer')
+        setSplitReference('')
+        setSplitAllocations({})
+        setSplitIncludedSites({})
+
         setPaymentModalOpen(true)
+        fetchActiveSitesForPayment()
     }
 
     const handlePaymentSubmit = async () => {
@@ -172,6 +225,100 @@ function VendorSummary() {
             toast.error(err.response?.data?.message || 'Payment failed')
         } finally {
             setPaymentLoading(false)
+        }
+    }
+
+    // ===== Split payment (Advance / Additional Payment) helpers =====
+
+    const togglePaymentType = (type) => {
+        setSplitPaymentTypes(prev =>
+            prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
+        )
+    }
+
+    const toggleSiteIncluded = (siteId) => {
+        setSplitIncludedSites(prev => ({ ...prev, [siteId]: !prev[siteId] }))
+    }
+
+    const updateSiteAllocation = (siteId, value) => {
+        setSplitAllocations(prev => ({ ...prev, [siteId]: value }))
+    }
+
+    const splitTotalAllocated = useMemo(() => {
+        return activeSites.reduce((sum, site) => {
+            if (!splitIncludedSites[site.id]) return sum
+            const val = Number(splitAllocations[site.id])
+            return sum + (isNaN(val) ? 0 : val)
+        }, 0)
+    }, [activeSites, splitIncludedSites, splitAllocations])
+
+    const splitRemaining = useMemo(() => {
+        const amt = Number(splitAmount) || 0
+        return parseFloat((amt - splitTotalAllocated).toFixed(2))
+    }, [splitAmount, splitTotalAllocated])
+
+    const splitNotesPreview = useMemo(() => {
+        const labels = splitPaymentTypes.map(t => t === 'advance' ? 'Advance Payment' : 'Additional Payment')
+        if (labels.length === 0) return null
+        const methodLabel = PAYMENT_METHOD_OPTIONS.find(m => m.value === splitMethod)?.label || splitMethod
+        const lines = [
+            `Payment Mode: ${labels.join(', ')}`,
+            `Payment Date: ${splitDate ? new Date(splitDate).toLocaleDateString() : '—'}`,
+            `Mode: ${methodLabel}`,
+        ]
+        if (splitReference) lines.push(`Reference: ${splitReference}`)
+        return lines
+    }, [splitPaymentTypes, splitDate, splitMethod, splitReference])
+
+    const handleSplitPaymentSubmit = async () => {
+        const amount = Number(splitAmount)
+        if (!splitAmount || isNaN(amount) || amount <= 0) {
+            toast.error('Please enter a valid payment amount')
+            return
+        }
+        if (splitPaymentTypes.length === 0) {
+            toast.error('Select at least one payment mode (Advance or Additional Payment)')
+            return
+        }
+        if (!splitDate) {
+            toast.error('Please select a payment date')
+            return
+        }
+
+        const allocations = activeSites
+            .filter(site => splitIncludedSites[site.id])
+            .map(site => ({ site_id: site.id, amount: Number(splitAllocations[site.id]) }))
+            .filter(a => !isNaN(a.amount) && a.amount > 0)
+
+        if (allocations.length === 0) {
+            toast.error('Allocate the payment amount to at least one active site')
+            return
+        }
+
+        if (Math.abs(splitRemaining) > 0.01) {
+            toast.error('Total allocated must equal the payment amount before proceeding')
+            return
+        }
+
+        setSplitLoading(true)
+        try {
+            const res = await axios.post(`/api/vendor-summary/${paymentVendor.vendor_id}/split-payment`, {
+                payment_types: splitPaymentTypes,
+                payment_amount: amount,
+                payment_date: splitDate,
+                payment_method: PAYMENT_METHOD_OPTIONS.find(m => m.value === splitMethod)?.label || splitMethod,
+                reference_notes: splitReference,
+                allocations,
+            })
+            if (res.data.success) {
+                toast.success(res.data.message)
+                setPaymentModalOpen(false)
+                fetchVendors()   // refresh the main table
+            }
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Split payment failed')
+        } finally {
+            setSplitLoading(false)
         }
     }
 
@@ -318,7 +465,6 @@ function VendorSummary() {
                     <button
                         onClick={() => openPaymentModal(params.data)}
                         className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors"
-                        disabled={Number(params.data.total_balance) <= 0}
                     >
                         <IndianRupee size={13} /> Pay
                     </button>
@@ -711,56 +857,286 @@ function VendorSummary() {
                 </div>
             )}
 
-            {paymentModalOpen && paymentVendor && (
-                <Modal
-                    isOpen={paymentModalOpen}
-                    onClose={() => setPaymentModalOpen(false)}
-                    title={`Make Payment — ${paymentVendor.vendor_name}`}
-                    size="md"
-                >
-                    <div className="space-y-4">
-                        <div className="rounded-lg bg-gray-50 border border-gray-200 px-4 py-3 flex justify-between items-center">
-                            <span className="text-sm text-gray-600">Outstanding Balance</span>
-                            <span className="text-sm font-semibold text-red-600">
-                                {formatCurrency(paymentVendor.total_balance)}
-                            </span>
-                        </div>
+            {paymentModalOpen && paymentVendor && (() => {
+                const hasOutstanding = Number(paymentVendor.total_balance) > 0
+                const modeLabels = { advance: 'Advance Payment', additional: 'Additional Payment' }
 
-                        {/* Payment amount */}
-                        <ThemeUI.FormField label="Payment Amount (₹)" required>
-                            <ThemeUI.Input
-                                type="number"
-                                step="0.01"
-                                min="0.01"
-                                value={paymentAmount}
-                                onChange={(e) => setPaymentAmount(e.target.value)}
-                                placeholder="0.00"
-                            />
-                        </ThemeUI.FormField>
+                return (
+                    <Modal
+                        isOpen={paymentModalOpen}
+                        onClose={() => setPaymentModalOpen(false)}
+                        title={`Make Payment — ${paymentVendor.vendor_name}`}
+                        size={paymentTab === 'split' ? 'xl' : 'md'}
+                    >
+                        <div className="space-y-4">
+                            <div className="rounded-lg bg-gray-50 border border-gray-200 px-4 py-3 flex justify-between items-center">
+                                <span className="text-sm text-gray-600">Outstanding Balance</span>
+                                <span className={`text-sm font-semibold ${hasOutstanding ? "text-red-600" : "text-green-600"}`}>
+                                    {formatCurrency(paymentVendor.total_balance)}
+                                </span>
+                            </div>
 
-                        <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
-                            <ThemeUI.Button
-                                onClick={() => setPaymentModalOpen(false)}
-                                gradientColors={{ start: theme.secondaryGradientStart, end: theme.secondaryGradientEnd }}
-                            >
-                                Cancel
-                            </ThemeUI.Button>
-                            <ThemeUI.Button
-                                onClick={handlePaymentSubmit}
-                                disabled={paymentLoading}
-                                gradientColors={{ start: theme.primaryGradientStart, end: theme.primaryGradientEnd }}
-                                direction={theme.gradientDirection}
-                            >
-                                {paymentLoading
-                                    ? <><Loader size={14} className="mr-2 animate-spin" /> Processing...</>
-                                    : 'Confirm Payment'
-                                }
-                            </ThemeUI.Button>
+                            {/* Tab switcher — only meaningful when there's an existing balance to pay off */}
+                            {hasOutstanding && (
+                                <div className="flex gap-2 border-b border-gray-200">
+                                    <button
+                                        onClick={() => setPaymentTab('standard')}
+                                        className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${
+                                            paymentTab === 'standard'
+                                                ? "border-current"
+                                                : "border-transparent text-gray-500 hover:text-gray-700"
+                                        }`}
+                                        style={paymentTab === 'standard' ? { color: theme.primaryGradientStart, borderColor: theme.primaryGradientStart } : undefined}
+                                    >
+                                        Standard Payment
+                                    </button>
+                                    <button
+                                        onClick={() => setPaymentTab('split')}
+                                        className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-px flex items-center gap-1.5 ${
+                                            paymentTab === 'split'
+                                                ? "border-current"
+                                                : "border-transparent text-gray-500 hover:text-gray-700"
+                                        }`}
+                                        style={paymentTab === 'split' ? { color: theme.primaryGradientStart, borderColor: theme.primaryGradientStart } : undefined}
+                                    >
+                                        <Layers size={14} /> Advance / Additional Payment
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* ===== STANDARD TAB — pay down existing outstanding invoices ===== */}
+                            {paymentTab === 'standard' && (
+                                <div className="space-y-4">
+                                    <ThemeUI.FormField label="Payment Amount (₹)" required>
+                                        <ThemeUI.Input
+                                            type="number"
+                                            step="0.01"
+                                            min="0.01"
+                                            value={paymentAmount}
+                                            onChange={(e) => setPaymentAmount(e.target.value)}
+                                            placeholder="0.00"
+                                        />
+                                    </ThemeUI.FormField>
+
+                                    <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+                                        <ThemeUI.Button
+                                            onClick={() => setPaymentModalOpen(false)}
+                                            gradientColors={{ start: theme.secondaryGradientStart, end: theme.secondaryGradientEnd }}
+                                        >
+                                            Cancel
+                                        </ThemeUI.Button>
+                                        <ThemeUI.Button
+                                            onClick={handlePaymentSubmit}
+                                            loading={paymentLoading}
+                                            gradientColors={{ start: theme.primaryGradientStart, end: theme.primaryGradientEnd }}
+                                            direction={theme.gradientDirection}
+                                        >
+                                            {paymentLoading
+                                                ? <><Loader size={14} className="mr-2 animate-spin" /> Processing...</>
+                                                : 'Confirm Payment'
+                                            }
+                                        </ThemeUI.Button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* ===== SPLIT TAB — Advance / Additional Payment, split across sites ===== */}
+                            {paymentTab === 'split' && (
+                                <div className="space-y-5">
+                                    {/* 1. Payment Mode */}
+                                    <div>
+                                        <div className="text-sm font-medium text-gray-700 mb-2">
+                                            1. Payment Mode <span className="text-gray-400 font-normal">(select one or more)</span>
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            {[
+                                                { key: 'advance', label: 'Advance Payment', desc: 'Payment made in advance before a regular invoice.' },
+                                                { key: 'additional', label: 'Additional Payment', desc: 'Payment greater than the total billed amount.' },
+                                            ].map(mode => {
+                                                const active = splitPaymentTypes.includes(mode.key)
+                                                return (
+                                                    <button
+                                                        key={mode.key}
+                                                        type="button"
+                                                        onClick={() => togglePaymentType(mode.key)}
+                                                        className={`text-left p-3 rounded-lg border-2 transition-colors ${
+                                                            active ? "bg-opacity-5" : "border-gray-200 hover:border-gray-300"
+                                                        }`}
+                                                        style={active ? { borderColor: theme.primaryGradientStart, backgroundColor: `${theme.primaryGradientStart}0d` } : undefined}
+                                                    >
+                                                        <div className="flex items-center justify-between mb-1">
+                                                            <span className="text-sm font-semibold text-gray-800">{mode.label}</span>
+                                                            {active
+                                                                ? <CheckCircle2 size={18} style={{ color: theme.primaryGradientStart }} />
+                                                                : <div className="w-[18px] h-[18px] rounded-full border-2 border-gray-300" />
+                                                            }
+                                                        </div>
+                                                        <p className="text-xs text-gray-500">{mode.desc}</p>
+                                                    </button>
+                                                )
+                                            })}
+                                        </div>
+                                        {splitPaymentTypes.length > 0 && (
+                                            <div className="mt-2 text-xs rounded-md px-3 py-2 bg-blue-50 text-blue-700 border border-blue-100">
+                                                Selected payment modes will be mentioned in the invoice notes.
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* 2. Payment Details */}
+                                    <div>
+                                        <div className="text-sm font-medium text-gray-700 mb-2">2. Payment Details</div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                            <ThemeUI.FormField label="Payment Amount (₹)" required>
+                                                <ThemeUI.Input
+                                                    type="number"
+                                                    step="0.01"
+                                                    min="0.01"
+                                                    value={splitAmount}
+                                                    onChange={(e) => setSplitAmount(e.target.value)}
+                                                    placeholder="0.00"
+                                                />
+                                            </ThemeUI.FormField>
+                                            <ThemeUI.FormField label="Payment Date" required>
+                                                <ThemeUI.Input
+                                                    type="date"
+                                                    value={splitDate}
+                                                    onChange={(e) => setSplitDate(e.target.value)}
+                                                />
+                                            </ThemeUI.FormField>
+                                            <ThemeUI.FormField label="Payment Method" required>
+                                                <ThemeUI.Select
+                                                    value={splitMethod}
+                                                    onChange={(val) => setSplitMethod(val)}
+                                                    options={PAYMENT_METHOD_OPTIONS}
+                                                    isSearchable={false}
+                                                />
+                                            </ThemeUI.FormField>
+                                        </div>
+                                        <div className="mt-3">
+                                            <ThemeUI.FormField label="Reference / Notes (Optional)">
+                                                <ThemeUI.Input
+                                                    value={splitReference}
+                                                    onChange={(e) => setSplitReference(e.target.value)}
+                                                    placeholder="Enter notes or reference"
+                                                />
+                                            </ThemeUI.FormField>
+                                        </div>
+                                    </div>
+
+                                    {/* Notes preview */}
+                                    {splitNotesPreview && (
+                                        <div className="rounded-lg bg-gray-50 border border-gray-200 px-4 py-3">
+                                            <div className="text-xs font-medium text-gray-500 mb-1.5">Notes that will appear in invoices (Preview)</div>
+                                            {splitNotesPreview.map((line, i) => (
+                                                <div key={i} className="text-xs text-gray-700">{line}</div>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {/* 3. Split across active sites */}
+                                    <div>
+                                        <div className="text-sm font-medium text-gray-700 mb-2">
+                                            3. Split Payment Amount ({formatCurrency(splitAmount || 0)}) to Active Sites
+                                        </div>
+
+                                        {activeSitesLoading ? (
+                                            <div className="flex items-center justify-center py-6 text-sm text-gray-500 gap-2">
+                                                <Loader size={16} className="animate-spin" /> Loading active sites...
+                                            </div>
+                                        ) : activeSites.length === 0 ? (
+                                            <div className="text-sm text-gray-500 py-4 text-center">No active sites found</div>
+                                        ) : (
+                                            <div className="border border-gray-200 rounded-lg overflow-hidden">
+                                                <div className="max-h-64 overflow-y-auto divide-y divide-gray-100">
+                                                    {activeSites.map(site => {
+                                                        const included = !!splitIncludedSites[site.id]
+                                                        return (
+                                                            <div key={site.id} className="flex items-center gap-3 px-3 py-2.5">
+                                                                <ThemeUI.Checkbox
+                                                                    id={`split-site-${site.id}`}
+                                                                    name={`split-site-${site.id}`}
+                                                                    checked={included}
+                                                                    onChange={() => toggleSiteIncluded(site.id)}
+                                                                />
+                                                                <span className="flex-1 text-sm text-gray-800 truncate">{site.name}</span>
+                                                                <div className="w-36">
+                                                                    <ThemeUI.Input
+                                                                        type="number"
+                                                                        step="0.01"
+                                                                        min="0"
+                                                                        placeholder="0.00"
+                                                                        value={splitAllocations[site.id] || ''}
+                                                                        onChange={(e) => updateSiteAllocation(site.id, e.target.value)}
+                                                                        disabled={!included}
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                        )
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Allocation summary */}
+                                        <div className="mt-3 grid grid-cols-3 gap-3 text-center">
+                                            <div className="rounded-lg bg-gray-50 border border-gray-200 py-2">
+                                                <div className="text-[11px] text-gray-500">Total Payment Amount</div>
+                                                <div className="text-sm font-semibold text-gray-800">{formatCurrency(splitAmount || 0)}</div>
+                                            </div>
+                                            <div className="rounded-lg bg-gray-50 border border-gray-200 py-2">
+                                                <div className="text-[11px] text-gray-500">Total Allocated</div>
+                                                <div className="text-sm font-semibold text-gray-800">{formatCurrency(splitTotalAllocated)}</div>
+                                            </div>
+                                            <div className="rounded-lg bg-gray-50 border border-gray-200 py-2">
+                                                <div className="text-[11px] text-gray-500">Remaining Amount</div>
+                                                <div className={`text-sm font-semibold ${Math.abs(splitRemaining) > 0.01 ? "text-red-600" : "text-green-600"}`}>
+                                                    {formatCurrency(splitRemaining)}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {splitAmount && (
+                                            <div className={`mt-3 flex items-center gap-2 text-xs rounded-md px-3 py-2 ${
+                                                Math.abs(splitRemaining) > 0.01
+                                                    ? "bg-red-50 text-red-700 border border-red-100"
+                                                    : "bg-green-50 text-green-700 border border-green-100"
+                                            }`}>
+                                                {Math.abs(splitRemaining) > 0.01
+                                                    ? <><AlertTriangle size={14} /> Total allocated does not match the payment amount.</>
+                                                    : <><CheckCircle2 size={14} /> Total allocation is equal to the payment amount.</>
+                                                }
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+                                        <ThemeUI.Button
+                                            onClick={() => setPaymentModalOpen(false)}
+                                            gradientColors={{ start: theme.secondaryGradientStart, end: theme.secondaryGradientEnd }}
+                                        >
+                                            Cancel
+                                        </ThemeUI.Button>
+                                        <ThemeUI.Button
+                                            onClick={handleSplitPaymentSubmit}
+                                            loading={splitLoading}
+                                            gradientColors={{ start: theme.primaryGradientStart, end: theme.primaryGradientEnd }}
+                                            direction={theme.gradientDirection}
+                                        >
+                                            {splitLoading
+                                                ? <><Loader size={14} className="mr-2 animate-spin" /> Processing...</>
+                                                : 'Proceed'
+                                            }
+                                        </ThemeUI.Button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
-                    </div>
-                </Modal>
-            )}
+                    </Modal>
+                )
+            })()}
         </Layout>
+
     )
 }
 

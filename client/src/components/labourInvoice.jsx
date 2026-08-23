@@ -82,6 +82,11 @@ function LabourInvoice() {
 
     const [items, setItems] = useState([{ ...emptyItem }])
 
+    // Item breakdown toggle — admin only. Non-admin submissions always use
+    // item-wise breakdown since that's what the admin needs to approve/rate.
+    const [useItemBreakdown, setUseItemBreakdown] = useState(true)
+    const [manualTotalAmount, setManualTotalAmount] = useState("")
+
     // Permissions
     const [permissions, setPermissions] = useState({
         can_add: false,
@@ -236,8 +241,11 @@ function LabourInvoice() {
 
     // Total amount (no additional charges for labour invoices)
     const totalAmount = useMemo(() => {
+        if (isAdmin && !useItemBreakdown) {
+            return parseFloat(manualTotalAmount) || 0
+        }
         return itemsTotal
-    }, [itemsTotal])
+    }, [itemsTotal, isAdmin, useItemBreakdown, manualTotalAmount])
 
     // Auto-calculate debit/credit (admin only)
     useEffect(() => {
@@ -477,6 +485,8 @@ function LabourInvoice() {
             status: 1,
         })
         setItems([{ ...emptyItem }])
+        setUseItemBreakdown(true)
+        setManualTotalAmount("")
         setBackendErrors({})
         setIsModalOpen(true)
     }
@@ -502,13 +512,23 @@ function LabourInvoice() {
             status: entry.status === 1 ? 1 : 0,
         })
         // Populate items from entry
-        if (entry.items && entry.items.length > 0) {
+        const hasItems = entry.items && entry.items.length > 0
+        setUseItemBreakdown(hasItems || !isAdmin)
+
+        if (hasItems) {
+            setManualTotalAmount("")
             setItems(entry.items.map(item => ({
                 labour_id: item.labour_id || "",
                 no_of_workers: item.no_of_workers || "",
                 rate_per_worker: item.rate_per_worker || "",
             })))
         } else {
+            const persistedTotal = entry.manual_total_amount
+            if (persistedTotal !== undefined && persistedTotal !== null && Number(persistedTotal) > 0) {
+                setManualTotalAmount(Number(persistedTotal).toFixed(2))
+            } else {
+                setManualTotalAmount("")
+            }
             setItems([{ ...emptyItem }])
         }
         setBackendErrors({})
@@ -523,7 +543,10 @@ function LabourInvoice() {
             if (isAdmin) {
                 payload = {
                     ...formData,
-                    items,
+                    items: useItemBreakdown ? items : [],
+                }
+                if (!useItemBreakdown) {
+                    payload.manual_total_amount = manualTotalAmount || "0"
                 }
             } else {
                 // Non-admin: limited payload (no rate, no debit/credit, no status)
@@ -604,6 +627,8 @@ function LabourInvoice() {
             status: 1,
         })
         setItems([{ ...emptyItem }])
+        setUseItemBreakdown(true)
+        setManualTotalAmount("")
         setBackendErrors({})
         setIsModalOpen(false)
     }
@@ -699,6 +724,10 @@ function LabourInvoice() {
                 width: 120,
                 valueGetter: (params) => {
                     const items = params.data.items || []
+                    if (items.length === 0) {
+                        // Manual-total mode — no items, use the admin-entered total
+                        return (parseFloat(params.data.manual_total_amount) || 0).toFixed(2)
+                    }
                     return items.reduce((sum, item) => {
                         return sum + (parseFloat(item.no_of_workers) || 0) * (parseFloat(item.rate_per_worker) || 0)
                     }, 0).toFixed(2)
@@ -850,7 +879,81 @@ function LabourInvoice() {
                     </ThemeUI.FormField>
                 </div>
 
-                {/* Items Table */}
+                {/* Item Breakdown Toggle — admin only; non-admin submissions always need items */}
+                {isAdmin && (
+                    <div
+                        className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer select-none"
+                        style={{
+                            backgroundColor: useItemBreakdown ? `${theme.primaryGradientStart}10` : '#f8fafc',
+                            borderColor: useItemBreakdown ? theme.primaryGradientStart : '#e2e8f0'
+                        }}
+                        onClick={() => {
+                            const next = !useItemBreakdown
+                            setUseItemBreakdown(next)
+                            if (!next) {
+                                setItems([{ ...emptyItem }])
+                            } else {
+                                setManualTotalAmount("")
+                            }
+                            setFormData(prev => ({ ...prev, debit_entry: "", credit_entry: "" }))
+                        }}
+                    >
+                        <div
+                            className="w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors"
+                            style={{
+                                backgroundColor: useItemBreakdown ? theme.primaryGradientStart : 'white',
+                                borderColor: useItemBreakdown ? theme.primaryGradientStart : '#cbd5e1'
+                            }}
+                        >
+                            {useItemBreakdown && (
+                                <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                </svg>
+                            )}
+                        </div>
+                        <div>
+                            <div className="text-sm font-medium text-gray-800">
+                                Add item-wise breakdown
+                            </div>
+                            <div className="text-xs text-gray-500 mt-0.5">
+                                {useItemBreakdown
+                                    ? "Labour-wise workers & rate enter பண்ணலாம் — total auto-calculate ஆகும்"
+                                    : "Tick செய்யாவிட்டால் invoice total amount நேரடியாக enter பண்ணலாம்"
+                                }
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Manual Total Amount — breakdown off இருந்தால் காட்டு (admin only) */}
+                {isAdmin && !useItemBreakdown && (
+                    <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <ThemeUI.FormField
+                            label="Invoice Total Amount (₹)"
+                            name="manual_total_amount"
+                            error={backendErrors.manual_total_amount}
+                            required
+                        >
+                            <ThemeUI.Input
+                                name="manual_total_amount"
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={manualTotalAmount}
+                                onChange={(e) => {
+                                    setManualTotalAmount(e.target.value)
+                                    setFormData(prev => ({ ...prev, debit_entry: "", credit_entry: "" }))
+                                    setBackendErrors(prev => ({ ...prev, manual_total_amount: "" }))
+                                }}
+                                placeholder="0.00"
+                                error={backendErrors.manual_total_amount}
+                            />
+                        </ThemeUI.FormField>
+                    </div>
+                )}
+
+                {/* Items Table — breakdown on இருந்தால் மட்டும் காட்டு */}
+                {useItemBreakdown && (
                 <div>
                     <div className="flex items-center justify-between mb-2">
                         <label className="block text-sm font-medium text-gray-700">
@@ -955,18 +1058,21 @@ function LabourInvoice() {
                         </table>
                     </div>
                 </div>
+                )}
 
                 {/* Admin-only: Payment & Status */}
                 {isAdmin && (
                     <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-4">
-                        <ThemeUI.FormField label="Total Amount (₹)">
-                            <ThemeUI.Input
-                                value={`₹${totalAmount.toFixed(2)}`}
-                                readOnly
-                                disabled
-                                className="bg-gray-100 cursor-not-allowed font-semibold"
-                            />
-                        </ThemeUI.FormField>
+                        {useItemBreakdown && (
+                            <ThemeUI.FormField label="Total Amount (₹)">
+                                <ThemeUI.Input
+                                    value={`₹${totalAmount.toFixed(2)}`}
+                                    readOnly
+                                    disabled
+                                    className="bg-gray-100 cursor-not-allowed font-semibold"
+                                />
+                            </ThemeUI.FormField>
+                        )}
 
                         <div>
                             <div className="flex items-center justify-between mb-1.5">
@@ -1092,12 +1198,14 @@ function LabourInvoice() {
                     <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
                         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                             <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-                                <div className="flex items-center gap-2">
-                                    <span className="text-slate-500">Items Total:</span>
-                                    <span className="font-semibold text-slate-900">
-                                        ₹{itemsTotal.toFixed(2)}
-                                    </span>
-                                </div>
+                                {useItemBreakdown && (
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-slate-500">Items Total:</span>
+                                        <span className="font-semibold text-slate-900">
+                                            ₹{itemsTotal.toFixed(2)}
+                                        </span>
+                                    </div>
+                                )}
                                 <div className="flex items-center gap-2">
                                     <span className="text-slate-500">Total:</span>
                                     <span className="font-semibold text-blue-700">

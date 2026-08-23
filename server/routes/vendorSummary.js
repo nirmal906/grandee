@@ -14,6 +14,9 @@ router.get('/:vendorId/site/:siteId', authMiddleware, vendorSummaryController.ge
 
 router.post('/:vendorId/payment', authMiddleware, vendorSummaryController.recordVendorPayment);
 
+// Advance Payment / Additional Payment — split a payment across active sites
+router.post('/:vendorId/split-payment', authMiddleware, vendorSummaryController.recordSplitPayment);
+
 router.get('/:vendorId/pending-invoices', authMiddleware, vendorSummaryController.getPendingInvoicesByVendor);
 
 module.exports = router;

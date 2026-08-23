@@ -31,6 +31,12 @@ const LabourInvoice = sequelize.define(
             allowNull: false,
             comment: 'Vendor invoice number (user-entered)'
         },
+        manual_total_amount: {
+            type: DataTypes.DECIMAL(12, 2),
+            allowNull: true,
+            defaultValue: null,
+            comment: 'Admin-entered invoice total when item-wise breakdown is NOT used (manual mode). Null when the invoice uses item-wise breakdown, since the total is derived from workers x rate per item instead. Non-admin submissions always use item-wise breakdown.'
+        },
         debit_entry: {
             type: DataTypes.DECIMAL(10, 2),
             allowNull: true,

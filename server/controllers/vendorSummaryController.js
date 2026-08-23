@@ -2,6 +2,30 @@ const { Vendor, Site, MaterialInvoice, MaterialInvoiceItem, LabourInvoice, Labou
 const { Op, sequelize } = require('../models');
 const { Unit } = require('../models');
 
+// ─────────────────────────────────────────────
+// Generate a unique invoice number for system-generated "split payment"
+// invoices (Advance Payment / Additional Payment). Reuses the same
+// MI-YYYY-NNNNN sequence as regular material invoices so numbering stays
+// consistent across the app. Must run inside the caller's transaction so
+// concurrent split-payment invoices don't collide.
+// ─────────────────────────────────────────────
+const generateSplitPaymentInvoiceNumber = async (transaction) => {
+    const year = new Date().getFullYear();
+    const prefix = `MI-${year}-`;
+    const last = await MaterialInvoice.findOne({
+        where: { invoice_number: { [Op.like]: `${prefix}%` } },
+        order: [['invoice_number', 'DESC']],
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+    });
+    let nextSeq = 1;
+    if (last && last.invoice_number) {
+        const seq = parseInt(last.invoice_number.replace(prefix, ''), 10);
+        if (!isNaN(seq)) nextSeq = seq + 1;
+    }
+    return `${prefix}${String(nextSeq).padStart(5, '0')}`;
+};
+
 const vendorSummaryController = {
 
     // ─────────────────────────────────────────────
@@ -346,6 +370,146 @@ const vendorSummaryController = {
         } catch (err) {
             await t.rollback();
             console.error('recordVendorPayment error:', err);
+            res.status(500).json({ success: false, message: 'Something went wrong. Please try again later!' });
+        }
+    },
+
+    // ─────────────────────────────────────────────
+    // POST /api/vendor-summary/:vendorId/split-payment
+    // Records an Advance Payment and/or Additional Payment.
+    //
+    // Unlike recordVendorPayment (which pays down existing outstanding
+    // invoices), this creates brand-new, fully-paid material invoices —
+    // one per site — for a payment the admin is splitting across active
+    // sites. This is used for money paid ahead of a regular invoice
+    // (Advance Payment) or money paid beyond what's currently billed
+    // (Additional Payment). The two modes are not mutually exclusive;
+    // whichever are selected are recorded together in the invoice notes.
+    //
+    //   Body: {
+    //     payment_types:   ['advance' | 'additional', ...]  (at least one)
+    //     payment_amount:  number
+    //     payment_date:    'YYYY-MM-DD'
+    //     payment_method:  string (optional, e.g. 'Bank Transfer')
+    //     reference_notes: string (optional)
+    //     allocations:     [{ site_id, amount }, ...]  — must sum to
+    //                      payment_amount and only reference active sites
+    //   }
+    // ─────────────────────────────────────────────
+    recordSplitPayment: async (req, res) => {
+        const t = await Vendor.sequelize.transaction();
+        try {
+            const { vendorId } = req.params;
+            const {
+                payment_types = [],
+                payment_amount,
+                payment_date,
+                payment_method,
+                reference_notes,
+                allocations = [],
+            } = req.body;
+
+            const VALID_TYPES = ['advance', 'additional'];
+            const types = Array.isArray(payment_types) ? payment_types : [];
+            if (types.length === 0 || types.some(pt => !VALID_TYPES.includes(pt))) {
+                await t.rollback();
+                return res.status(400).json({ success: false, message: 'Select at least one payment mode (Advance Payment or Additional Payment)' });
+            }
+
+            const amount = parseFloat(payment_amount);
+            if (!payment_amount || isNaN(amount) || amount <= 0) {
+                await t.rollback();
+                return res.status(400).json({ success: false, message: 'payment_amount must be a positive number' });
+            }
+
+            if (!payment_date) {
+                await t.rollback();
+                return res.status(400).json({ success: false, message: 'payment_date is required' });
+            }
+
+            const vendor = await Vendor.findOne({ where: { id: vendorId }, transaction: t });
+            if (!vendor) {
+                await t.rollback();
+                return res.status(404).json({ success: false, message: 'Vendor not found' });
+            }
+
+            // Clean + validate the site allocations
+            const cleanAllocations = (Array.isArray(allocations) ? allocations : [])
+                .map(a => ({ site_id: a.site_id, amount: parseFloat(a.amount) }))
+                .filter(a => a.site_id && !isNaN(a.amount) && a.amount > 0);
+
+            if (cleanAllocations.length === 0) {
+                await t.rollback();
+                return res.status(400).json({ success: false, message: 'Allocate the payment amount to at least one active site' });
+            }
+
+            const totalAllocated = parseFloat(cleanAllocations.reduce((sum, a) => sum + a.amount, 0).toFixed(2));
+            if (Math.abs(totalAllocated - amount) > 0.01) {
+                await t.rollback();
+                return res.status(400).json({
+                    success: false,
+                    message: `Total allocated (₹${totalAllocated.toFixed(2)}) must equal the payment amount (₹${amount.toFixed(2)})`
+                });
+            }
+
+            const siteIds = [...new Set(cleanAllocations.map(a => String(a.site_id)))];
+            const sites = await Site.findAll({
+                where: { id: { [Op.in]: siteIds }, is_active: 1 },
+                transaction: t,
+            });
+            if (sites.length !== siteIds.length) {
+                await t.rollback();
+                return res.status(400).json({ success: false, message: 'One or more selected sites are not active' });
+            }
+            const siteMap = new Map(sites.map(s => [String(s.id), s]));
+
+            const updatedBy = req.user?.userId ?? req.user?.id;
+
+            const modeLabels = types.map(pt => (pt === 'advance' ? 'Advance Payment' : 'Additional Payment'));
+            const noteParts = [`Payment Mode: ${modeLabels.join(', ')}`, `Payment Date: ${payment_date}`];
+            if (payment_method) noteParts.push(`Mode: ${payment_method}`);
+            if (reference_notes) noteParts.push(`Reference: ${reference_notes}`);
+            const notesText = noteParts.join(' | ');
+
+            const createdInvoices = [];
+            for (const alloc of cleanAllocations) {
+                const site = siteMap.get(String(alloc.site_id));
+                const invoiceNumber = await generateSplitPaymentInvoiceNumber(t);
+                const allocAmount = parseFloat(alloc.amount.toFixed(2));
+
+                const invoice = await MaterialInvoice.create({
+                    site_id: alloc.site_id,
+                    vendor_id: vendorId,
+                    date: new Date(payment_date),
+                    invoice_number: invoiceNumber,
+                    additional_charges: 0,
+                    manual_total_amount: allocAmount,
+                    debit_entry: 0,
+                    credit_entry: allocAmount,
+                    notes: notesText,
+                    status: 1,
+                    created_by: updatedBy,
+                    updated_by: updatedBy,
+                }, { transaction: t });
+
+                createdInvoices.push({
+                    invoice_id: invoice.id,
+                    invoice_number: invoiceNumber,
+                    site_id: alloc.site_id,
+                    site_name: site.name,
+                    amount: allocAmount,
+                });
+            }
+
+            await t.commit();
+            res.status(201).json({
+                success: true,
+                message: `${modeLabels.join(' & ')} of ₹${amount.toFixed(2)} recorded across ${createdInvoices.length} site${createdInvoices.length > 1 ? 's' : ''}`,
+                data: { vendor_id: vendorId, amount_paid: amount, invoices: createdInvoices }
+            });
+        } catch (err) {
+            await t.rollback();
+            console.error('recordSplitPayment error:', err);
             res.status(500).json({ success: false, message: 'Something went wrong. Please try again later!' });
         }
     },
