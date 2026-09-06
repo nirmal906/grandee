@@ -289,8 +289,22 @@ const materialInvoiceController = {
             }
 
             // Debit + Credit = Total Amount validation
-            const debitAmount = Number(debit_entry || 0);
-            const creditAmount = Number(credit_entry || 0);
+            // If neither paid nor due was explicitly specified, default the invoice
+            // to fully "Due" (nothing paid yet) — matches the client, which no
+            // longer exposes a Paid/Due selector on this form. Payments against an
+            // invoice are only ever recorded via the Vendor Summary payment flow.
+            const debitProvided = debit_entry !== undefined && debit_entry !== null && debit_entry !== '';
+            const creditProvided = credit_entry !== undefined && credit_entry !== null && credit_entry !== '';
+            let finalDebitEntry, finalCreditEntry;
+            if (!debitProvided && !creditProvided) {
+                finalDebitEntry = totalAmount.toFixed(2);
+                finalCreditEntry = '0.00';
+            } else {
+                finalDebitEntry = debit_entry ? Number(debit_entry).toFixed(2) : '0.00';
+                finalCreditEntry = credit_entry ? Number(credit_entry).toFixed(2) : '0.00';
+            }
+            const debitAmount = Number(finalDebitEntry);
+            const creditAmount = Number(finalCreditEntry);
             const sum = parseFloat((debitAmount + creditAmount).toFixed(2));
 
             if (Object.keys(errors).length === 0) {
@@ -319,8 +333,8 @@ const materialInvoiceController = {
                 manual_total_amount: hasItems
                     ? null
                     : parseFloat(parseFloat(req.body.manual_total_amount || 0).toFixed(2)),
-                debit_entry: debit_entry ? Number(debit_entry).toFixed(2) : '0.00',
-                credit_entry: credit_entry ? Number(credit_entry).toFixed(2) : '0.00',
+                debit_entry: finalDebitEntry,
+                credit_entry: finalCreditEntry,
                 invoice_photo: invoicePhotoFilename,
                 notes: notes || null,
                 status: status !== undefined ? Number(status) : 1,

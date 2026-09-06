@@ -1,5 +1,5 @@
 import { useLocation } from 'react-router-dom';
-import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
+import React, { useState, useEffect, useCallback, useMemo } from "react"
 import axios from "../utils/axios"
 import { toast } from "react-toastify"
 import { AgGridReact } from "ag-grid-react"
@@ -65,17 +65,12 @@ function LabourInvoice() {
     const [isPaused, setIsPaused] = useState(false)
     const words = ["site name", "vendor name", "labour type"]
 
-    // Ref to prevent circular updates
-    const isUpdatingRef = useRef(false)
-
     const emptyItem = { labour_id: "", no_of_workers: "", rate_per_worker: "" }
 
     const [formData, setFormData] = useState({
         site_id: "",
         vendor_id: "",
         date: "",
-        debit_entry: "",
-        credit_entry: "",
         notes: "",
         status: 1,
     })
@@ -247,49 +242,6 @@ function LabourInvoice() {
         return itemsTotal
     }, [itemsTotal, isAdmin, useItemBreakdown, manualTotalAmount])
 
-    // Auto-calculate debit/credit (admin only)
-    useEffect(() => {
-        if (!isAdmin) return
-        if (isUpdatingRef.current) return
-
-        if (totalAmount === 0) {
-            setFormData(prev => ({
-                ...prev,
-                debit_entry: "",
-                credit_entry: "",
-            }))
-            return
-        }
-
-        const debit = Number(formData.debit_entry) || 0
-        const credit = Number(formData.credit_entry) || 0
-
-        isUpdatingRef.current = true
-
-        if (formData.credit_entry !== "" && credit >= 0 && credit <= totalAmount) {
-            const calculatedDebit = totalAmount - credit
-            if (Math.abs(calculatedDebit - debit) > 0.01) {
-                setFormData(prev => ({
-                    ...prev,
-                    debit_entry: calculatedDebit.toFixed(2),
-                }))
-            }
-        }
-        else if (formData.debit_entry !== "" && debit >= 0 && debit <= totalAmount) {
-            const calculatedCredit = totalAmount - debit
-            if (Math.abs(calculatedCredit - credit) > 0.01) {
-                setFormData(prev => ({
-                    ...prev,
-                    credit_entry: calculatedCredit.toFixed(2),
-                }))
-            }
-        }
-
-        setTimeout(() => {
-            isUpdatingRef.current = false
-        }, 100)
-    }, [formData.debit_entry, formData.credit_entry, totalAmount, isAdmin])
-
     // Item handlers
     const handleItemChange = (index, field, value) => {
         setItems(prev => {
@@ -297,9 +249,6 @@ function LabourInvoice() {
             updated[index] = { ...updated[index], [field]: value }
             return updated
         })
-        if (isAdmin) {
-            setFormData(prev => ({ ...prev, debit_entry: "", credit_entry: "" }))
-        }
     }
 
     const handleItemLabourChange = (index, selectedOption) => {
@@ -317,9 +266,6 @@ function LabourInvoice() {
             }
             return updated
         })
-        if (isAdmin) {
-            setFormData(prev => ({ ...prev, debit_entry: "", credit_entry: "" }))
-        }
     }
 
     const addItem = () => {
@@ -329,9 +275,6 @@ function LabourInvoice() {
     const removeItem = (index) => {
         if (items.length <= 1) return
         setItems(prev => prev.filter((_, i) => i !== index))
-        if (isAdmin) {
-            setFormData(prev => ({ ...prev, debit_entry: "", credit_entry: "" }))
-        }
     }
 
     // History
@@ -479,8 +422,6 @@ function LabourInvoice() {
             site_id: "",
             vendor_id: "",
             date: "",
-            debit_entry: "",
-            credit_entry: "",
             notes: "",
             status: 1,
         })
@@ -506,8 +447,6 @@ function LabourInvoice() {
             site_id: entry.site_id || "",
             vendor_id: entry.vendor_id || "",
             date: entry.date ? entry.date.split('T')[0] : "",
-            debit_entry: entry.debit_entry || "",
-            credit_entry: entry.credit_entry || "",
             notes: entry.notes || "",
             status: entry.status === 1 ? 1 : 0,
         })
@@ -547,6 +486,15 @@ function LabourInvoice() {
                 }
                 if (!useItemBreakdown) {
                     payload.manual_total_amount = manualTotalAmount || "0"
+                }
+                // Paid/Due status: admin-created entries always default to "Due" —
+                // the full amount outstanding, nothing paid. Payments are only ever
+                // recorded through the Vendor Summary "Make Payment" flow. On edit we
+                // leave debit_entry/credit_entry out entirely so the invoice's
+                // existing paid/due split (set by a prior payment) is preserved.
+                if (editingEntry?.isNew) {
+                    payload.debit_entry = totalAmount.toFixed(2)
+                    payload.credit_entry = "0.00"
                 }
             } else {
                 // Non-admin: limited payload (no rate, no debit/credit, no status)
@@ -621,8 +569,6 @@ function LabourInvoice() {
             site_id: "",
             vendor_id: "",
             date: "",
-            debit_entry: "",
-            credit_entry: "",
             notes: "",
             status: 1,
         })
@@ -647,22 +593,6 @@ function LabourInvoice() {
     const handleVendorChange = (selectedOption) => {
         setFormData(prev => ({ ...prev, vendor_id: selectedOption?.value || "" }))
         setBackendErrors(prev => ({ ...prev, vendor_id: "" }))
-    }
-
-    const handleCreditChange = (e) => {
-        const value = e.target.value
-        if (value === "" || (!isNaN(value) && Number(value) >= 0)) {
-            setFormData(prev => ({ ...prev, credit_entry: value, debit_entry: "" }))
-            setBackendErrors(prev => ({ ...prev, credit_entry: "" }))
-        }
-    }
-
-    const handleDebitChange = (e) => {
-        const value = e.target.value
-        if (value === "" || (!isNaN(value) && Number(value) >= 0)) {
-            setFormData(prev => ({ ...prev, debit_entry: value, credit_entry: "" }))
-            setBackendErrors(prev => ({ ...prev, debit_entry: "" }))
-        }
     }
 
     const handleStatusChange = (selectedOption) => {
@@ -895,7 +825,6 @@ function LabourInvoice() {
                             } else {
                                 setManualTotalAmount("")
                             }
-                            setFormData(prev => ({ ...prev, debit_entry: "", credit_entry: "" }))
                         }}
                     >
                         <div
@@ -942,7 +871,6 @@ function LabourInvoice() {
                                 value={manualTotalAmount}
                                 onChange={(e) => {
                                     setManualTotalAmount(e.target.value)
-                                    setFormData(prev => ({ ...prev, debit_entry: "", credit_entry: "" }))
                                     setBackendErrors(prev => ({ ...prev, manual_total_amount: "" }))
                                 }}
                                 placeholder="0.00"
@@ -1060,9 +988,9 @@ function LabourInvoice() {
                 </div>
                 )}
 
-                {/* Admin-only: Payment & Status */}
+                {/* Admin-only: Total & Status */}
                 {isAdmin && (
-                    <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-4">
+                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {useItemBreakdown && (
                             <ThemeUI.FormField label="Total Amount (₹)">
                                 <ThemeUI.Input
@@ -1073,97 +1001,6 @@ function LabourInvoice() {
                                 />
                             </ThemeUI.FormField>
                         )}
-
-                        <div>
-                            <div className="flex items-center justify-between mb-1.5">
-                                <label className="block text-sm font-medium text-gray-700">
-                                    Paid ₹ <span className="text-red-500">*</span>
-                                </label>
-                                <ThemeUI.Checkbox
-                                    id="paid_checkbox"
-                                    name="paid_checkbox"
-                                    checked={formData.credit_entry === totalAmount.toFixed(2) && totalAmount > 0}
-                                    onChange={(e) => {
-                                        if (e.target.checked) {
-                                            setFormData(prev => ({
-                                                ...prev,
-                                                credit_entry: totalAmount.toFixed(2),
-                                                debit_entry: "0.00"
-                                            }))
-                                        } else {
-                                            setFormData(prev => ({
-                                                ...prev,
-                                                credit_entry: "",
-                                                debit_entry: ""
-                                            }))
-                                        }
-                                    }}
-                                    disabled={totalAmount === 0}
-                                />
-                            </div>
-                            <ThemeUI.Input
-                                name="credit_entry"
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                max={totalAmount}
-                                value={formData.credit_entry}
-                                onChange={handleCreditChange}
-                                placeholder="0.00"
-                                error={backendErrors.credit_entry}
-                                disabled={totalAmount === 0}
-                            />
-                            {backendErrors.credit_entry && (
-                                <div className="flex items-center mt-1 text-red-500 text-xs">
-                                    <span>{backendErrors.credit_entry}</span>
-                                </div>
-                            )}
-                        </div>
-
-                        <div>
-                            <div className="flex items-center justify-between mb-1.5">
-                                <label className="block text-sm font-medium text-gray-700">
-                                    Due ₹ <span className="text-red-500">*</span>
-                                </label>
-                                <ThemeUI.Checkbox
-                                    id="due_checkbox"
-                                    name="due_checkbox"
-                                    checked={formData.debit_entry === totalAmount.toFixed(2) && totalAmount > 0}
-                                    onChange={(e) => {
-                                        if (e.target.checked) {
-                                            setFormData(prev => ({
-                                                ...prev,
-                                                debit_entry: totalAmount.toFixed(2),
-                                                credit_entry: "0.00"
-                                            }))
-                                        } else {
-                                            setFormData(prev => ({
-                                                ...prev,
-                                                debit_entry: ""
-                                            }))
-                                        }
-                                    }}
-                                    disabled={totalAmount === 0}
-                                />
-                            </div>
-                            <ThemeUI.Input
-                                name="debit_entry"
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                max={totalAmount}
-                                value={formData.debit_entry}
-                                onChange={handleDebitChange}
-                                placeholder="0.00"
-                                error={backendErrors.debit_entry}
-                                disabled={totalAmount === 0}
-                            />
-                            {backendErrors.debit_entry && (
-                                <div className="flex items-center mt-1 text-red-500 text-xs">
-                                    <span>{backendErrors.debit_entry}</span>
-                                </div>
-                            )}
-                        </div>
 
                         <ThemeUI.FormField label="Status" name="status" error={backendErrors.status} required>
                             <ThemeUI.Select
@@ -1193,8 +1030,15 @@ function LabourInvoice() {
                     </ThemeUI.FormField>
                 </div>
 
-                {/* Summary Bar (admin only, when total > 0) */}
-                {isAdmin && totalAmount > 0 && (
+                {/* Summary Bar (admin only, when total > 0). Paid/Due are no longer
+                    editable here — new invoices always default to fully Due; edits
+                    preserve whatever paid/due split the invoice already has (only
+                    changed via a Vendor Summary payment). */}
+                {isAdmin && totalAmount > 0 && (() => {
+                    const isNewEntry = !!editingEntry?.isNew
+                    const displayPaid = isNewEntry ? 0 : Number(editingEntry?.credit_entry || 0)
+                    const displayDue  = isNewEntry ? totalAmount : Number(editingEntry?.debit_entry || 0)
+                    return (
                     <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
                         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                             <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
@@ -1215,27 +1059,25 @@ function LabourInvoice() {
                                 <div className="flex items-center gap-2">
                                     <span className="text-slate-500">Paid:</span>
                                     <span className="font-semibold text-green-700">
-                                        ₹{Number(formData.credit_entry || 0).toFixed(2)}
+                                        ₹{displayPaid.toFixed(2)}
                                     </span>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <span className="text-slate-500">Due:</span>
                                     <span className="font-semibold text-red-700">
-                                        ₹{Number(formData.debit_entry || 0).toFixed(2)}
+                                        ₹{displayDue.toFixed(2)}
                                     </span>
                                 </div>
                             </div>
-                            {Math.abs(
-                                (Number(formData.debit_entry || 0) + Number(formData.credit_entry || 0)) -
-                                totalAmount
-                            ) > 0.01 && (
-                                <div className="flex items-center gap-2 text-xs text-red-700 bg-red-100 px-3 py-1.5 rounded-full">
-                                    Amount mismatch
+                            {isNewEntry && (
+                                <div className="text-xs text-slate-500">
+                                    New invoices are recorded as fully Due. Record payments from Vendor Summary.
                                 </div>
                             )}
                         </div>
                     </div>
-                )}
+                    )
+                })()}
 
                 <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
                     <ThemeUI.Button

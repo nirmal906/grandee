@@ -1,5 +1,5 @@
 import { useLocation } from 'react-router-dom';
-import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
+import React, { useState, useEffect, useCallback, useMemo } from "react"
 import axios from "../utils/axios"
 import { toast } from "react-toastify"
 import { AgGridReact } from "ag-grid-react"
@@ -54,9 +54,6 @@ function MaterialInvoice() {
     const [isPaused, setIsPaused] = useState(false)
     const words = ["site name", "vendor name", "invoice number"]
 
-    // Ref to prevent circular updates
-    const isUpdatingRef = useRef(false)
-
     const emptyItem = { material_id: "", quantity: "", rate: "" }
 
     const [formData, setFormData] = useState({
@@ -64,8 +61,6 @@ function MaterialInvoice() {
         vendor_id: "",
         date: "",
         additional_charges: "0",
-        debit_entry: "",
-        credit_entry: "",
         notes: "",
         status: 1,
         invoice_photo: null,
@@ -234,48 +229,6 @@ function MaterialInvoice() {
         return itemsTotal + additionalCharges
     }, [itemsTotal, formData.additional_charges, useItemBreakdown, manualTotalAmount])
 
-    // Auto-calculate debit/credit
-    useEffect(() => {
-        if (isUpdatingRef.current) return
-
-        if (totalAmount === 0) {
-            setFormData(prev => ({
-                ...prev,
-                debit_entry: "",
-                credit_entry: "",
-            }))
-            return
-        }
-
-        const debit = Number(formData.debit_entry) || 0
-        const credit = Number(formData.credit_entry) || 0
-
-        isUpdatingRef.current = true
-
-        if (formData.credit_entry !== "" && credit >= 0 && credit <= totalAmount) {
-            const calculatedDebit = totalAmount - credit
-            if (Math.abs(calculatedDebit - debit) > 0.01) {
-                setFormData(prev => ({
-                    ...prev,
-                    debit_entry: calculatedDebit.toFixed(2),
-                }))
-            }
-        }
-        else if (formData.debit_entry !== "" && debit >= 0 && debit <= totalAmount) {
-            const calculatedCredit = totalAmount - debit
-            if (Math.abs(calculatedCredit - credit) > 0.01) {
-                setFormData(prev => ({
-                    ...prev,
-                    credit_entry: calculatedCredit.toFixed(2),
-                }))
-            }
-        }
-
-        setTimeout(() => {
-            isUpdatingRef.current = false
-        }, 100)
-    }, [formData.debit_entry, formData.credit_entry, totalAmount])
-
     // Item handlers
     const handleItemChange = (index, field, value) => {
         setItems(prev => {
@@ -283,7 +236,6 @@ function MaterialInvoice() {
             updated[index] = { ...updated[index], [field]: value }
             return updated
         })
-        setFormData(prev => ({ ...prev, debit_entry: "", credit_entry: "" }))
     }
 
     const handleItemMaterialChange = (index, selectedOption) => {
@@ -306,7 +258,6 @@ function MaterialInvoice() {
                 return updated
             })
         }
-        setFormData(prev => ({ ...prev, debit_entry: "", credit_entry: "" }))
     }
 
     const addItem = () => {
@@ -316,7 +267,6 @@ function MaterialInvoice() {
     const removeItem = (index) => {
         if (items.length <= 1) return
         setItems(prev => prev.filter((_, i) => i !== index))
-        setFormData(prev => ({ ...prev, debit_entry: "", credit_entry: "" }))
     }
 
     // History
@@ -500,8 +450,6 @@ function MaterialInvoice() {
             vendor_id: "",
             date: "",
             additional_charges: "0",
-            debit_entry: "",
-            credit_entry: "",
             notes: "",
             status: 1,
             invoice_photo: null,
@@ -526,8 +474,6 @@ function MaterialInvoice() {
             vendor_id: entry.vendor_id || "",
             date: entry.date ? entry.date.split('T')[0] : "",
             additional_charges: entry.additional_charges || "0",
-            debit_entry: entry.debit_entry || "",
-            credit_entry: entry.credit_entry || "",
             notes: entry.notes || "",
             status: entry.status === 1 ? 1 : 0,
             invoice_photo: null,
@@ -590,6 +536,16 @@ function MaterialInvoice() {
             // manual total amount — breakdown off இருந்தால் append
             if (!useItemBreakdown) {
                 payload.append("manual_total_amount", manualTotalAmount || "0")
+            }
+
+            // Paid/Due status: entry points via this form always default to "Due" —
+            // the full amount outstanding, nothing paid. Payments are only ever
+            // recorded through the Vendor Summary "Make Payment" flow. On edit we
+            // leave debit_entry/credit_entry out entirely so the invoice's existing
+            // paid/due split (set by a prior payment) is preserved untouched.
+            if (editingEntry?.isNew) {
+                payload.append("debit_entry", totalAmount.toFixed(2))
+                payload.append("credit_entry", "0.00")
             }
 
             if (formData.invoice_photo) {
@@ -656,8 +612,6 @@ function MaterialInvoice() {
             vendor_id: "",
             date: "",
             additional_charges: "0",
-            debit_entry: "",
-            credit_entry: "",
             notes: "",
             status: 1,
             invoice_photo: null,
@@ -692,26 +646,8 @@ function MaterialInvoice() {
         setFormData(prev => ({
             ...prev,
             additional_charges: value,
-            debit_entry: "",
-            credit_entry: "",
         }))
         setBackendErrors(prev => ({ ...prev, additional_charges: "" }))
-    }
-
-    const handleCreditChange = (e) => {
-        const value = e.target.value
-        if (value === "" || (!isNaN(value) && Number(value) >= 0)) {
-            setFormData(prev => ({ ...prev, credit_entry: value, debit_entry: "" }))
-            setBackendErrors(prev => ({ ...prev, credit_entry: "" }))
-        }
-    }
-
-    const handleDebitChange = (e) => {
-        const value = e.target.value
-        if (value === "" || (!isNaN(value) && Number(value) >= 0)) {
-            setFormData(prev => ({ ...prev, debit_entry: value, credit_entry: "" }))
-            setBackendErrors(prev => ({ ...prev, debit_entry: "" }))
-        }
     }
 
     const handleStatusChange = (selectedOption) => {
@@ -792,9 +728,11 @@ function MaterialInvoice() {
                         return sum + (parseFloat(item.quantity) || 0) * (parseFloat(item.rate) || 0)
                     }, 0)
                     const additional = parseFloat(params.data.additional_charges) || 0
-                    // items இல்லாத போது debit+credit = total
+                    // items இல்லாத போது manual_total_amount = total (NOT debit+credit —
+                    // that sum can legitimately be 0 for a brand-new "Due" invoice even
+                    // though the invoice total itself is non-zero)
                     if (items.length === 0) {
-                        return (parseFloat(params.data.debit_entry || 0) + parseFloat(params.data.credit_entry || 0)).toFixed(2)
+                        return (parseFloat(params.data.manual_total_amount) || 0).toFixed(2)
                     }
                     return (itemsTotal + additional).toFixed(2)
                 },
@@ -940,7 +878,6 @@ function MaterialInvoice() {
                         } else {
                             setManualTotalAmount("")
                         }
-                        setFormData(prev => ({ ...prev, debit_entry: "", credit_entry: "" }))
                     }}
                 >
                     <div
@@ -986,7 +923,6 @@ function MaterialInvoice() {
                                 value={manualTotalAmount}
                                 onChange={(e) => {
                                     setManualTotalAmount(e.target.value)
-                                    setFormData(prev => ({ ...prev, debit_entry: "", credit_entry: "" }))
                                     setBackendErrors(prev => ({ ...prev, manual_total_amount: "" }))
                                 }}
                                 placeholder="0.00"
@@ -1102,10 +1038,8 @@ function MaterialInvoice() {
                     </div>
                 )}
 
-                {/* Charges & Payment */}
-                <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-4">
-                    {/* Additional charges — breakdown mode-ல் மட்டும் காட்டு */}
-
+                {/* Charges & Status */}
+                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {/* Total Amount — breakdown mode-ல் readonly show, manual mode-ல் hide (already shown above) */}
                     {useItemBreakdown && (
                         <ThemeUI.FormField label="Total Amount (₹)">
@@ -1130,97 +1064,6 @@ function MaterialInvoice() {
                             error={backendErrors.additional_charges}
                         />
                     </ThemeUI.FormField>
-
-                    <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                            <label className="block text-sm font-medium text-gray-700">
-                                Paid ₹ 
-                            </label>
-                            <ThemeUI.Checkbox
-                                id="paid_checkbox"
-                                name="paid_checkbox"
-                                checked={formData.credit_entry === totalAmount.toFixed(2) && totalAmount > 0}
-                                onChange={(e) => {
-                                    if (e.target.checked) {
-                                        setFormData(prev => ({
-                                            ...prev,
-                                            credit_entry: totalAmount.toFixed(2),
-                                            debit_entry: "0.00"
-                                        }))
-                                    } else {
-                                        setFormData(prev => ({
-                                            ...prev,
-                                            credit_entry: "",
-                                            debit_entry: ""
-                                        }))
-                                    }
-                                }}
-                                disabled={totalAmount === 0}
-                            />
-                        </div>
-                        <ThemeUI.Input
-                            name="credit_entry"
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            max={totalAmount}
-                            value={formData.credit_entry}
-                            onChange={handleCreditChange}
-                            placeholder="0.00"
-                            error={backendErrors.credit_entry}
-                            disabled={totalAmount === 0}
-                        />
-                        {backendErrors.credit_entry && (
-                            <div className="flex items-center mt-1 text-red-500 text-xs">
-                                <span>{backendErrors.credit_entry}</span>
-                            </div>
-                        )}
-                    </div>
-
-                    <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                            <label className="block text-sm font-medium text-gray-700">
-                                Due ₹ 
-                            </label>
-                            <ThemeUI.Checkbox
-                                id="due_checkbox"
-                                name="due_checkbox"
-                                checked={formData.debit_entry === totalAmount.toFixed(2) && totalAmount > 0}
-                                onChange={(e) => {
-                                    if (e.target.checked) {
-                                        setFormData(prev => ({
-                                            ...prev,
-                                            debit_entry: totalAmount.toFixed(2),
-                                            credit_entry: "0.00"
-                                        }))
-                                    } else {
-                                        setFormData(prev => ({
-                                            ...prev,
-                                            debit_entry: ""
-                                        }))
-                                    }
-                                }}
-                                disabled={totalAmount === 0}
-                            />
-                        </div>
-                        <ThemeUI.Input
-                            name="debit_entry"
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            max={totalAmount}
-                            value={formData.debit_entry}
-                            onChange={handleDebitChange}
-                            placeholder="0.00"
-                            error={backendErrors.debit_entry}
-                            disabled={totalAmount === 0}
-                        />
-                        {backendErrors.debit_entry && (
-                            <div className="flex items-center mt-1 text-red-500 text-xs">
-                                <span>{backendErrors.debit_entry}</span>
-                            </div>
-                        )}
-                    </div>
 
                     <ThemeUI.FormField label="Status" name="status" error={backendErrors.status} required>
                         <ThemeUI.Select
@@ -1269,53 +1112,62 @@ function MaterialInvoice() {
                     </ThemeUI.FormField>
                 </div>
 
-                {/* Summary Bar */}
-                {totalAmount > 0 && (
-                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                            <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-                                {useItemBreakdown && (
-                                    <>
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-slate-500">Items Total:</span>
-                                            <span className="font-semibold text-slate-900">
-                                                ₹{itemsTotal.toFixed(2)}
-                                            </span>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-slate-500">+ Charges:</span>
-                                            <span className="font-semibold text-slate-900">
-                                                ₹{Number(formData.additional_charges || 0).toFixed(2)}
-                                            </span>
-                                        </div>
-                                    </>
+                {/* Summary Bar — Paid/Due are no longer editable here. New invoices
+                    always default to fully Due; edits preserve whatever paid/due
+                    split the invoice already has (only changed via a Vendor
+                    Summary payment). */}
+                {totalAmount > 0 && (() => {
+                    const isNewEntry = !!editingEntry?.isNew
+                    const displayPaid = isNewEntry ? 0 : Number(editingEntry?.credit_entry || 0)
+                    const displayDue  = isNewEntry ? totalAmount : Number(editingEntry?.debit_entry || 0)
+                    return (
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+                            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                                <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                                    {useItemBreakdown && (
+                                        <>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-slate-500">Items Total:</span>
+                                                <span className="font-semibold text-slate-900">
+                                                    ₹{itemsTotal.toFixed(2)}
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-slate-500">+ Charges:</span>
+                                                <span className="font-semibold text-slate-900">
+                                                    ₹{Number(formData.additional_charges || 0).toFixed(2)}
+                                                </span>
+                                            </div>
+                                        </>
+                                    )}
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-slate-500">Total:</span>
+                                        <span className="font-semibold text-blue-700">
+                                            ₹{totalAmount.toFixed(2)}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-slate-500">Paid:</span>
+                                        <span className="font-semibold text-green-700">
+                                            ₹{displayPaid.toFixed(2)}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-slate-500">Due:</span>
+                                        <span className="font-semibold text-red-700">
+                                            ₹{displayDue.toFixed(2)}
+                                        </span>
+                                    </div>
+                                </div>
+                                {isNewEntry && (
+                                    <div className="text-xs text-slate-500">
+                                        New invoices are recorded as fully Due. Record payments from Vendor Summary.
+                                    </div>
                                 )}
-                                <div className="flex items-center gap-2">
-                                    <span className="text-slate-500">Total:</span>
-                                    <span className="font-semibold text-blue-700">
-                                        ₹{totalAmount.toFixed(2)}
-                                    </span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <span className="text-slate-500">Paid:</span>
-                                    <span className="font-semibold text-green-700">
-                                        ₹{Number(formData.credit_entry || 0).toFixed(2)}
-                                    </span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <span className="text-slate-500">Due:</span>
-                                    <span className="font-semibold text-red-700">
-                                        ₹{Number(formData.debit_entry || 0).toFixed(2)}
-                                    </span>
-                                </div>
                             </div>
-                           {(Number(formData.debit_entry || 0) + Number(formData.credit_entry || 0)) >
-                                totalAmount + 0.01 && (
-                                <div className="...">Paid + Due exceeds total amount</div>
-                            )}
                         </div>
-                    </div>
-                )}
+                    )
+                })()}
 
                 <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
                     <ThemeUI.Button

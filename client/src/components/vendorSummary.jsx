@@ -6,7 +6,7 @@ import { themeQuartz } from "ag-grid-community"
 import Layout from "./layout"
 import { useTheme } from "../context/themeContext"
 import { ThemeUI } from "../context/themeUI"
-import { ChevronRight, Search, Eye, ArrowLeft, Filter, IndianRupee, Loader, CheckCircle2, AlertTriangle, Wallet, Layers } from "lucide-react"
+import { ChevronRight, Search, Eye, ArrowLeft, Filter, IndianRupee, Loader, CheckCircle2, AlertTriangle, Wallet, Layers, Package, Wrench } from "lucide-react"
 import Modal from "./modal"
 import Offcanvas from "./offcanvas"
 import NoRowsOverlay from "./noRowsOverlay"
@@ -48,6 +48,7 @@ function VendorSummary() {
     const [activeSites,        setActiveSites]        = useState([])
     const [activeSitesLoading, setActiveSitesLoading]  = useState(false)
     const [splitPaymentTypes,  setSplitPaymentTypes]   = useState([]) // ['advance', 'additional']
+    const [splitInvoiceTypes,  setSplitInvoiceTypes]   = useState([]) // ['material', 'labour']
     const [splitAmount,        setSplitAmount]         = useState('')
     const [splitDate,          setSplitDate]           = useState(() => new Date().toISOString().slice(0, 10))
     const [splitMethod,        setSplitMethod]         = useState('bank_transfer')
@@ -194,6 +195,7 @@ function VendorSummary() {
 
         // Reset split-payment state for a clean modal every time it opens
         setSplitPaymentTypes([])
+        setSplitInvoiceTypes([])
         setSplitAmount('')
         setSplitDate(new Date().toISOString().slice(0, 10))
         setSplitMethod('bank_transfer')
@@ -236,6 +238,12 @@ function VendorSummary() {
         )
     }
 
+    const toggleInvoiceType = (type) => {
+        setSplitInvoiceTypes(prev =>
+            prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
+        )
+    }
+
     const toggleSiteIncluded = (siteId) => {
         setSplitIncludedSites(prev => ({ ...prev, [siteId]: !prev[siteId] }))
     }
@@ -261,14 +269,16 @@ function VendorSummary() {
         const labels = splitPaymentTypes.map(t => t === 'advance' ? 'Advance Payment' : 'Additional Payment')
         if (labels.length === 0) return null
         const methodLabel = PAYMENT_METHOD_OPTIONS.find(m => m.value === splitMethod)?.label || splitMethod
+        const invoiceTypeLabels = splitInvoiceTypes.map(t => t === 'material' ? 'Material' : 'Labour')
         const lines = [
             `Payment Mode: ${labels.join(', ')}`,
             `Payment Date: ${splitDate ? new Date(splitDate).toLocaleDateString() : '—'}`,
             `Mode: ${methodLabel}`,
         ]
+        if (invoiceTypeLabels.length > 0) lines.push(`Invoice Type: ${invoiceTypeLabels.join(', ')}`)
         if (splitReference) lines.push(`Reference: ${splitReference}`)
         return lines
-    }, [splitPaymentTypes, splitDate, splitMethod, splitReference])
+    }, [splitPaymentTypes, splitInvoiceTypes, splitDate, splitMethod, splitReference])
 
     const handleSplitPaymentSubmit = async () => {
         const amount = Number(splitAmount)
@@ -278,6 +288,10 @@ function VendorSummary() {
         }
         if (splitPaymentTypes.length === 0) {
             toast.error('Select at least one payment mode (Advance or Additional Payment)')
+            return
+        }
+        if (splitInvoiceTypes.length === 0) {
+            toast.error('Select at least one invoice type (Material or Labour)')
             return
         }
         if (!splitDate) {
@@ -304,6 +318,7 @@ function VendorSummary() {
         try {
             const res = await axios.post(`/api/vendor-summary/${paymentVendor.vendor_id}/split-payment`, {
                 payment_types: splitPaymentTypes,
+                invoice_types: splitInvoiceTypes,
                 payment_amount: amount,
                 payment_date: splitDate,
                 payment_method: PAYMENT_METHOD_OPTIONS.find(m => m.value === splitMethod)?.label || splitMethod,
@@ -1077,6 +1092,42 @@ function VendorSummary() {
                                                 </div>
                                             </div>
                                         )}
+
+                                        {/* Invoice Type — required. Determines which invoice ledger
+                                            (Material / Labour) this payment is recorded against, so
+                                            Vendor Summary totals stay accurate per category. */}
+                                        <div className="mt-3 border border-gray-200 rounded-lg p-3">
+                                            <div className="text-sm font-medium text-gray-700 mb-2">
+                                                Invoice Type <span className="text-red-500">*</span>
+                                                <span className="text-gray-400 font-normal ml-1">(select one or more)</span>
+                                            </div>
+                                            <div className="flex flex-wrap gap-5">
+                                                {[
+                                                    { key: 'material', label: 'Material', icon: Package },
+                                                    { key: 'labour', label: 'Labour', icon: Wrench },
+                                                ].map(type => {
+                                                    const active = splitInvoiceTypes.includes(type.key)
+                                                    const Icon = type.icon
+                                                    return (
+                                                        <label key={type.key} className="flex items-center gap-2 cursor-pointer">
+                                                            <ThemeUI.Checkbox
+                                                                id={`invoice-type-${type.key}`}
+                                                                name={`invoice-type-${type.key}`}
+                                                                checked={active}
+                                                                onChange={() => toggleInvoiceType(type.key)}
+                                                            />
+                                                            <Icon size={16} className="text-gray-500" />
+                                                            <span className="text-sm text-gray-800">{type.label}</span>
+                                                        </label>
+                                                    )
+                                                })}
+                                            </div>
+                                            {splitInvoiceTypes.length > 0 && (
+                                                <div className="mt-2 text-xs rounded-md px-3 py-2 bg-blue-50 text-blue-700 border border-blue-100">
+                                                    Each selected site's amount will be recorded as a fully-paid invoice under each selected type.
+                                                </div>
+                                            )}
+                                        </div>
 
                                         {/* Allocation summary */}
                                         <div className="mt-3 grid grid-cols-3 gap-3 text-center">

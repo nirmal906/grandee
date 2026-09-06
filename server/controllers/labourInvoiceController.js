@@ -346,6 +346,10 @@ const labourInvoiceController = {
             if (itemErrors.length > 0) errors.itemErrors = itemErrors;
 
             // ── Admin-only invoice-level field validations ──
+            const debitProvided  = debit_entry  !== undefined && debit_entry  !== null && debit_entry  !== '';
+            const creditProvided = credit_entry !== undefined && credit_entry !== null && credit_entry !== '';
+            let adminTotalAmount = 0;
+
             if (isAdmin) {
                 if (debit_entry !== undefined && debit_entry !== null && debit_entry !== '') {
                     if (isNaN(debit_entry) || Number(debit_entry) < 0) errors.debit_entry = 'Debit entry must be a positive number';
@@ -365,26 +369,31 @@ const labourInvoiceController = {
                     }
                 }
 
-                // Validate total = sum of line totals (or manual total) = debit + credit
+                // Validate total = sum of line totals (or manual total) = debit + credit.
+                // If neither debit_entry nor credit_entry was provided at all, the
+                // invoice defaults to fully "Due" below — nothing to validate against,
+                // since that always sums correctly by construction.
                 if (itemErrors.length === 0 && !errors.debit_entry && !errors.credit_entry && !errors.manual_total_amount) {
-                    let totalAmount = 0;
                     if (hasItems) {
                         for (const item of items) {
                             const workers = parseFloat(item.no_of_workers) || 0;
                             const rate    = parseFloat(item.rate_per_worker) || 0;
-                            totalAmount  += parseFloat((workers * rate).toFixed(2));
+                            adminTotalAmount += parseFloat((workers * rate).toFixed(2));
                         }
                     } else {
-                        totalAmount = parseFloat(parseFloat(req.body.manual_total_amount || 0).toFixed(2));
+                        adminTotalAmount = parseFloat(parseFloat(req.body.manual_total_amount || 0).toFixed(2));
                     }
-                    totalAmount = parseFloat(totalAmount.toFixed(2));
+                    adminTotalAmount = parseFloat(adminTotalAmount.toFixed(2));
 
-                    const debitAmount  = Number(debit_entry  || 0);
-                    const creditAmount = Number(credit_entry || 0);
-                    const sum          = parseFloat((debitAmount + creditAmount).toFixed(2));
-                    if (Math.abs(sum - totalAmount) > 0.01) {
-                        errors.debit_entry = `Total Amount (₹${totalAmount.toFixed(2)}) must equal Debit + Credit (₹${sum.toFixed(2)})`;
+                    if (debitProvided || creditProvided) {
+                        const debitAmount  = Number(debit_entry  || 0);
+                        const creditAmount = Number(credit_entry || 0);
+                        const sum          = parseFloat((debitAmount + creditAmount).toFixed(2));
+                        if (Math.abs(sum - adminTotalAmount) > 0.01) {
+                            errors.debit_entry = `Total Amount (₹${adminTotalAmount.toFixed(2)}) must equal Debit + Credit (₹${sum.toFixed(2)})`;
+                        }
                     }
+                    // else: nothing provided — defaults to fully Due, always valid
                 }
 
                 if (status !== undefined && ![0, 1].includes(Number(status))) {
@@ -398,6 +407,16 @@ const labourInvoiceController = {
             }
             const autoInvoiceNumber = await generateLabourInvoiceNumber(transaction);
 
+            // Paid/Due status: admin-created entries default to fully "Due" when
+            // neither field is explicitly provided — payments are only ever
+            // recorded via the Vendor Summary payment flow from here on.
+            const adminDebitEntry  = debitProvided || creditProvided
+                ? (debit_entry ? Number(debit_entry).toFixed(2) : '0.00')
+                : adminTotalAmount.toFixed(2);
+            const adminCreditEntry = debitProvided || creditProvided
+                ? (credit_entry ? Number(credit_entry).toFixed(2) : '0.00')
+                : '0.00';
+
             // ── Create invoice ──
             const invoiceData = {
                 site_id,
@@ -408,8 +427,8 @@ const labourInvoiceController = {
                 manual_total_amount: isAdmin && !hasItems
                     ? parseFloat(parseFloat(req.body.manual_total_amount || 0).toFixed(2))
                     : null,
-                debit_entry:     isAdmin ? (debit_entry  ? Number(debit_entry).toFixed(2)  : 0.00) : null,
-                credit_entry:    isAdmin ? (credit_entry ? Number(credit_entry).toFixed(2) : 0.00) : null,
+                debit_entry:     isAdmin ? adminDebitEntry  : null,
+                credit_entry:    isAdmin ? adminCreditEntry : null,
                 status:          isAdmin ? (status !== undefined ? Number(status) : 1) : 1,
                 approval_status: isAdmin ? 'approved' : 'pending',
                 rejection_reason: null,

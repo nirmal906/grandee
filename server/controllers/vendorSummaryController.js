@@ -26,6 +26,26 @@ const generateSplitPaymentInvoiceNumber = async (transaction) => {
     return `${prefix}${String(nextSeq).padStart(5, '0')}`;
 };
 
+// Same idea, for system-generated split-payment Labour invoices — reuses the
+// LI-YYYY-NNNNN sequence so numbering stays consistent with regular labour
+// invoices.
+const generateSplitPaymentLabourInvoiceNumber = async (transaction) => {
+    const year = new Date().getFullYear();
+    const prefix = `LI-${year}-`;
+    const last = await LabourInvoice.findOne({
+        where: { invoice_number: { [Op.like]: `${prefix}%` } },
+        order: [['invoice_number', 'DESC']],
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+    });
+    let nextSeq = 1;
+    if (last && last.invoice_number) {
+        const seq = parseInt(last.invoice_number.replace(prefix, ''), 10);
+        if (!isNaN(seq)) nextSeq = seq + 1;
+    }
+    return `${prefix}${String(nextSeq).padStart(5, '0')}`;
+};
+
 const vendorSummaryController = {
 
     // ─────────────────────────────────────────────
@@ -402,6 +422,7 @@ const vendorSummaryController = {
             const { vendorId } = req.params;
             const {
                 payment_types = [],
+                invoice_types = [],
                 payment_amount,
                 payment_date,
                 payment_method,
@@ -414,6 +435,18 @@ const vendorSummaryController = {
             if (types.length === 0 || types.some(pt => !VALID_TYPES.includes(pt))) {
                 await t.rollback();
                 return res.status(400).json({ success: false, message: 'Select at least one payment mode (Advance Payment or Additional Payment)' });
+            }
+
+            // Which invoice ledger(s) this payment should be recorded against —
+            // Material and/or Labour. Required so Vendor Summary's per-category
+            // totals (Material Billed/Paid, Labour Billed/Paid) stay accurate;
+            // previously every split payment was silently recorded as a Material
+            // invoice regardless of what it actually paid for.
+            const VALID_INVOICE_TYPES = ['material', 'labour'];
+            const invoiceTypes = Array.isArray(invoice_types) ? invoice_types : [];
+            if (invoiceTypes.length === 0 || invoiceTypes.some(it => !VALID_INVOICE_TYPES.includes(it))) {
+                await t.rollback();
+                return res.status(400).json({ success: false, message: 'Select at least one invoice type (Material or Labour)' });
             }
 
             const amount = parseFloat(payment_amount);
@@ -466,45 +499,80 @@ const vendorSummaryController = {
             const updatedBy = req.user?.userId ?? req.user?.id;
 
             const modeLabels = types.map(pt => (pt === 'advance' ? 'Advance Payment' : 'Additional Payment'));
-            const noteParts = [`Payment Mode: ${modeLabels.join(', ')}`, `Payment Date: ${payment_date}`];
+            const invoiceTypeLabels = invoiceTypes.map(it => (it === 'material' ? 'Material' : 'Labour'));
+            const noteParts = [`Payment Mode: ${modeLabels.join(', ')}`, `Payment Date: ${payment_date}`, `Invoice Type: ${invoiceTypeLabels.join(', ')}`];
             if (payment_method) noteParts.push(`Mode: ${payment_method}`);
             if (reference_notes) noteParts.push(`Reference: ${reference_notes}`);
             const notesText = noteParts.join(' | ');
 
+            // For every selected invoice type, create a fully-paid invoice for each
+            // allocated site amount — matches how the amount is entered (per-site,
+            // not split further per type).
             const createdInvoices = [];
-            for (const alloc of cleanAllocations) {
-                const site = siteMap.get(String(alloc.site_id));
-                const invoiceNumber = await generateSplitPaymentInvoiceNumber(t);
-                const allocAmount = parseFloat(alloc.amount.toFixed(2));
+            for (const invoiceType of invoiceTypes) {
+                for (const alloc of cleanAllocations) {
+                    const site = siteMap.get(String(alloc.site_id));
+                    const allocAmount = parseFloat(alloc.amount.toFixed(2));
 
-                const invoice = await MaterialInvoice.create({
-                    site_id: alloc.site_id,
-                    vendor_id: vendorId,
-                    date: new Date(payment_date),
-                    invoice_number: invoiceNumber,
-                    additional_charges: 0,
-                    manual_total_amount: allocAmount,
-                    debit_entry: 0,
-                    credit_entry: allocAmount,
-                    notes: notesText,
-                    status: 1,
-                    created_by: updatedBy,
-                    updated_by: updatedBy,
-                }, { transaction: t });
+                    if (invoiceType === 'material') {
+                        const invoiceNumber = await generateSplitPaymentInvoiceNumber(t);
+                        const invoice = await MaterialInvoice.create({
+                            site_id: alloc.site_id,
+                            vendor_id: vendorId,
+                            date: new Date(payment_date),
+                            invoice_number: invoiceNumber,
+                            additional_charges: 0,
+                            manual_total_amount: allocAmount,
+                            debit_entry: 0,
+                            credit_entry: allocAmount,
+                            notes: notesText,
+                            status: 1,
+                            created_by: updatedBy,
+                            updated_by: updatedBy,
+                        }, { transaction: t });
 
-                createdInvoices.push({
-                    invoice_id: invoice.id,
-                    invoice_number: invoiceNumber,
-                    site_id: alloc.site_id,
-                    site_name: site.name,
-                    amount: allocAmount,
-                });
+                        createdInvoices.push({
+                            invoice_id: invoice.id,
+                            invoice_number: invoiceNumber,
+                            invoice_type: 'material',
+                            site_id: alloc.site_id,
+                            site_name: site.name,
+                            amount: allocAmount,
+                        });
+                    } else {
+                        const invoiceNumber = await generateSplitPaymentLabourInvoiceNumber(t);
+                        const invoice = await LabourInvoice.create({
+                            site_id: alloc.site_id,
+                            vendor_id: vendorId,
+                            date: new Date(payment_date),
+                            invoice_number: invoiceNumber,
+                            manual_total_amount: allocAmount,
+                            debit_entry: 0,
+                            credit_entry: allocAmount,
+                            notes: notesText,
+                            status: 1,
+                            approval_status: 'approved',
+                            rejection_reason: null,
+                            created_by: updatedBy,
+                            updated_by: updatedBy,
+                        }, { transaction: t });
+
+                        createdInvoices.push({
+                            invoice_id: invoice.id,
+                            invoice_number: invoiceNumber,
+                            invoice_type: 'labour',
+                            site_id: alloc.site_id,
+                            site_name: site.name,
+                            amount: allocAmount,
+                        });
+                    }
+                }
             }
 
             await t.commit();
             res.status(201).json({
                 success: true,
-                message: `${modeLabels.join(' & ')} of ₹${amount.toFixed(2)} recorded across ${createdInvoices.length} site${createdInvoices.length > 1 ? 's' : ''}`,
+                message: `${modeLabels.join(' & ')} of ₹${amount.toFixed(2)} recorded as ${invoiceTypeLabels.join(' & ')} across ${cleanAllocations.length} site${cleanAllocations.length > 1 ? 's' : ''}`,
                 data: { vendor_id: vendorId, amount_paid: amount, invoices: createdInvoices }
             });
         } catch (err) {
