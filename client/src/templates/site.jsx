@@ -13,11 +13,21 @@ const WhatsAppIcon = ({ size = 16, color = "white" }) => (
 
 const COMPANY_NAME = "Grandee Constructions"
 
-export default function CustomerWhatsAppModal({ site, onClose }) {
+const PAYMENT_MODE_LABELS = {
+	cash: "Cash", cheque: "Cheque", bank_transfer: "Bank Transfer",
+	upi: "UPI", card: "Card", other: "Other"
+}
+
+export default function CustomerWhatsAppModal({
+	site,
+	onClose,
+	initialTemplate = null,   // e.g. "received" — opens straight into that template
+	initialPayment  = null    // { amount, payment_date, payment_mode, transaction_reference }
+}) {
 	const { theme }                           = useTheme()
-	const [step, setStep]                     = useState("pick")
-	const [activeTemplate, setActiveTemplate] = useState(null)
-	const [enteredAmount, setEnteredAmount]   = useState("")
+	const [step, setStep]                     = useState(initialTemplate ? "compose" : "pick")
+	const [activeTemplate, setActiveTemplate] = useState(initialTemplate)
+	const [enteredAmount, setEnteredAmount]   = useState(initialPayment?.amount ? String(initialPayment.amount) : "")
 	const [customNote, setCustomNote]         = useState("")
 	const [paymentSummary, setPaymentSummary] = useState(null)
 	const [summaryLoading, setSummaryLoading] = useState(false)
@@ -60,9 +70,27 @@ export default function CustomerWhatsAppModal({ site, onClose }) {
 	]
 
 	const enteredAmountNum = parseFloat(enteredAmount) || 0
-	const remaining        = totalBudget - enteredAmountNum
+
+	// Received Payment: show the latest balance from the payment history
+	// (budget − all recorded payments), which already includes the payment just
+	// completed. Fall back to budget − entered amount only until the summary loads.
+	// Request Payment keeps its original calculation.
+	const latestBalance = paymentSummary ? parseFloat(paymentSummary.balance || 0) : null
+	const remaining = (activeTemplate === "received" && latestBalance !== null)
+		? latestBalance
+		: totalBudget - enteredAmountNum
 
 	const fmt = (val) => `₹${Number(val).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`
+
+	// Extra payment details (date / mode / reference) — only present when the
+	// template was opened automatically right after a payment was recorded.
+	const paymentDetailLines = initialPayment
+		? [
+			initialPayment.payment_date ? `\n*Payment Date:* ${initialPayment.payment_date}` : "",
+			initialPayment.payment_mode ? `\n*Payment Mode:* ${PAYMENT_MODE_LABELS[initialPayment.payment_mode] || initialPayment.payment_mode}` : "",
+			initialPayment.transaction_reference ? `\n*Reference:* ${initialPayment.transaction_reference}` : "",
+		].join("")
+		: ""
 
 	// Build preview message
 	const previewMessage = useMemo(() => {
@@ -90,7 +118,7 @@ ${COMPANY_NAME}`
 We have received your payment for *${siteName}*.
 
 *Total Budget:* ${fmt(totalBudget)}
-*Received Payment:* ${fmt(enteredAmountNum || 0)}
+*Received Payment:* ${fmt(enteredAmountNum || 0)}${paymentDetailLines}
 *Remaining Balance:* ${fmt(remaining)}
 
 Thank you for your prompt payment.
@@ -125,7 +153,7 @@ ${COMPANY_NAME}`
 		}
 
 		return ""
-	}, [activeTemplate, enteredAmountNum, remaining, totalBudget, clientName, siteName, paymentSummary])
+	}, [activeTemplate, enteredAmountNum, remaining, totalBudget, clientName, siteName, paymentSummary, paymentDetailLines])
 
 	const finalMessage = previewMessage + (customNote.trim() ? `\n\n${customNote.trim()}` : "")
 

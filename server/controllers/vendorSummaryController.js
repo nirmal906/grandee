@@ -111,8 +111,9 @@ const vendorSummaryController = {
                     return (!latest || d > latest) ? d : latest;
                 }, null);
 
-                // Only include vendors that have at least one invoice
-                if (materialInvoices.length > 0 || labourInvoices.length > 0) {
+                // Include every active vendor — even those with no invoices yet
+                // (all totals will be 0 and last_purchase / last_paid_date null)
+                {
                     summaryData.push({
                         vendor_id:              vendor.id,
                         vendor_name:            vendor.name,

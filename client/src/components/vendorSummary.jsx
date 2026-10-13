@@ -8,6 +8,7 @@ import { useTheme } from "../context/themeContext"
 import { ThemeUI } from "../context/themeUI"
 import { ChevronRight, Search, Eye, ArrowLeft, Filter, IndianRupee, Loader, CheckCircle2, AlertTriangle, Wallet, Layers, Package, Wrench } from "lucide-react"
 import Modal from "./modal"
+import VendorTemplate from "../templates/vendor"
 import Offcanvas from "./offcanvas"
 import NoRowsOverlay from "./noRowsOverlay"
 
@@ -40,6 +41,9 @@ function VendorSummary() {
     const [paymentVendor,    setPaymentVendor]       = useState(null)
     const [paymentAmount,    setPaymentAmount]        = useState('')
     const [paymentLoading,   setPaymentLoading]       = useState(false)
+
+    // WhatsApp "Pay Off" message — opens automatically after a successful payment
+    const [payoffWhatsapp, setPayoffWhatsapp] = useState(null) // { vendor, payment }
 
     // Payment modal — tab (standard payoff vs. advance/additional split payment)
     const [paymentTab, setPaymentTab] = useState('standard') // 'standard' | 'split'
@@ -222,6 +226,10 @@ function VendorSummary() {
                 toast.success(res.data.message)
                 setPaymentModalOpen(false)
                 fetchVendors()   // refresh the main table
+                setPayoffWhatsapp({
+                    vendor: { id: paymentVendor.vendor_id, name: paymentVendor.vendor_name, phone: paymentVendor.vendor_phone },
+                    payment: { amount: String(amount) },
+                })
             }
         } catch (err) {
             toast.error(err.response?.data?.message || 'Payment failed')
@@ -329,6 +337,15 @@ function VendorSummary() {
                 toast.success(res.data.message)
                 setPaymentModalOpen(false)
                 fetchVendors()   // refresh the main table
+                setPayoffWhatsapp({
+                    vendor: { id: paymentVendor.vendor_id, name: paymentVendor.vendor_name, phone: paymentVendor.vendor_phone },
+                    payment: {
+                        amount: String(amount),
+                        paymentDate: splitDate,
+                        paymentMode: splitMethod,
+                        transactionRef: splitReference,
+                    },
+                })
             }
         } catch (err) {
             toast.error(err.response?.data?.message || 'Split payment failed')
@@ -1186,6 +1203,16 @@ function VendorSummary() {
                     </Modal>
                 )
             })()}
+
+            {payoffWhatsapp && (
+                <VendorTemplate
+                    vendor={payoffWhatsapp.vendor}
+                    siteName="Grandee Constructions"
+                    initialTemplate="payment"
+                    initialPayment={payoffWhatsapp.payment}
+                    onClose={() => setPayoffWhatsapp(null)}
+                />
+            )}
         </Layout>
 
     )

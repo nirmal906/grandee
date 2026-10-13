@@ -178,7 +178,16 @@ function Layout({ children, selectedSite, siteName }) {
 	const menuStructure = useMemo(() => [
 		{ name: 'dashboard', icon: LayoutDashboard, label: 'Dashboard', type: 'single' },
 		{ name: 'site', icon: MapPin, label: 'Sites', type: 'single' },
-		{ name: 'vendor', icon: Truck, label: 'Vendor', type: 'single' },
+		{
+			name: 'vendor',
+			icon: Truck,
+			label: 'Vendor',
+			type: 'group',
+			children: [
+				{ name: 'vendor', icon: Truck, label: 'Master', type: 'single' },
+				{ name: 'vendorsummary', icon: BarChart3, label: 'Summary', type: 'single' },
+			]
+		},
 		{
 			name: 'labour',
 			icon: Users,
@@ -200,7 +209,6 @@ function Layout({ children, selectedSite, siteName }) {
 				{ name: 'materialinvoice', icon: FileText, label: 'Invoices', type: 'single' },
 			]
 		},
-		{ name: 'vendorsummary', icon: BarChart3, label: 'Vendor Summary', type: 'single' },
 		{
 			name: 'settings',
 			icon: Settings,

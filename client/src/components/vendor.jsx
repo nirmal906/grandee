@@ -1,607 +1,630 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
-import axios from "../utils/axios"
-import { toast } from "react-toastify"
-import Layout from "./layout"
+import React, { useState, useMemo } from "react"
+import { Check, X, Search, ChevronDown, ArrowLeft, Package, ClipboardCheck, IndianRupee } from "lucide-react"
+import Modal from "../components/modal"
 import { useTheme } from "../context/themeContext"
 import { ThemeUI } from "../context/themeUI"
-import { ChevronRight, MessageCircle, Loader, Edit, Search, Filter, Plus, Trash2, Download } from "lucide-react"
-import Modal from "./modal"
-import { themeQuartz } from "ag-grid-community"
-import NoRowsOverlay from "./noRowsOverlay"
-import { AgGridReact } from "ag-grid-react"
-import * as XLSX from 'xlsx'
-import VendorTemplate from "../templates/vendor"
-const INITIAL_FORM_STATE = {
-	name			: "",
-	phone			: "",
-	email			: "",
-	pincode			: "",
-	district		: "",
-	state			: "",
-	region			: "",
-	country			: "India",
-	full_address	: "",
-	notes			: "",
-	post_office_name: ""
-}
-function Vendor(){
-	const { theme } 								= useTheme()
-	const gridRef 									= useRef(null)
-	const [isModalOpen, setIsModalOpen] 			= useState(false)
-	const [isOffcanvasOpen, setIsOffcanvasOpen] 	= useState(false)
-	const [isLoading, setIsLoading] 				= useState(false)
-	const [totalRows, setTotalRows] 				= useState(0)
-	const [perPage, setPerPage] 					= useState(10)
-	const [currentPage, setCurrentPage] 			= useState(1)
-	const [vendors, setVendors] 					= useState([])
-	const [editingVendor, setEditingVendor] 		= useState(null)
-	const [searchQuery, setSearchQuery] 			= useState("")
-	const [backendErrors, setBackendErrors] 		= useState({})
-	const [selectedPincode, setSelectedPincode] 	= useState(null)
-	const [placeholder, setPlaceholder] 			= useState("Search by vendor name...")
-	const [currentWordIndex, setCurrentWordIndex] 	= useState(0)
-	const [currentCharIndex, setCurrentCharIndex] 	= useState(0)
-	const [isDeleting, setIsDeleting] 				= useState(false)
-	const words 									= ["vendor name", "location", "phone", "email"]
-	const [formData, setFormData] 					= useState(INITIAL_FORM_STATE)
-	const [whatsappVendor, setWhatsappVendor] 		= useState(null)
-	const [materials, setMaterials] 				= useState([])
-	const [vendorPermissions, setVendorPermissions] = useState({
-		can_add: false,
-		can_edit: false,
-		can_delete: false,
-		can_view: false,
-	})
 
-	const getUserPermissions = useCallback(() => {
-		try{
-			const permissionsStr = localStorage.getItem('userPermissions')
-			if(permissionsStr){
-				const permissions = JSON.parse(permissionsStr)
-				if(permissions.vendor){
-					return{
-						can_add: permissions.vendor.can_add || false,
-						can_edit: permissions.vendor.can_edit || false,
-						can_delete: permissions.vendor.can_delete || false,
-						can_view: permissions.vendor.can_view || false,
-					}
-				}
-			}
-			return { can_add: false, can_edit: false, can_delete: false, can_view: false }
-		}catch(error){
-			console.error('Error parsing user permissions:', error)
-			return { can_add: false, can_edit: false, can_delete: false, can_view: false }
-		}
-	}, [])
+const WhatsAppIcon = ({ size = 16, color = "white" }) => (
+	<svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
+		<path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+	</svg>
+)
 
-	// Fetch material entries
-    const fetchActiveMaterials = async () => {
-        try{
-            const response = await axios.get(`/api/material-invoice/active-materials`)
-            if(response.data.success){
-                setMaterials(response.data.data)
-            }
-        }catch(err){
-            console.error("Error fetching materials:", err)
-            toast.error("Failed to load materials")
-        }
-    }
+// ── Payment Mode Options ──
+const PAYMENT_MODES = [
+	{ value: "cash",         label: "Cash" },
+	{ value: "cheque",       label: "Cheque" },
+	{ value: "bank_transfer",label: "Bank Transfer" },
+	{ value: "upi",          label: "UPI" },
+	{ value: "card",         label: "Card" },
+	{ value: "other",        label: "Other" },
+]
 
-	useEffect(() => {
-		const permissions = getUserPermissions()
-		setVendorPermissions(permissions)
-	}, [getUserPermissions])
+// ── Material Selector (unchanged) ──
+function MaterialSelector({ materials = [], selected, onChange }) {
+	const [search, setSearch] = useState("")
+	const [open, setOpen]     = useState(false)
 
-	useEffect(() => {
-		const handlePermissionsUpdate = () => {
-			const permissions = getUserPermissions()
-			setVendorPermissions(permissions)
-		}
-		window.addEventListener('permissionsUpdated', handlePermissionsUpdate)
-		return () => window.removeEventListener('permissionsUpdated', handlePermissionsUpdate)
-	}, [getUserPermissions])
+	const getUnitName = (unit) => {
+		if(!unit) return ""
+		if(typeof unit === "object") return unit.name ?? ""
+		return unit
+	}
 
-	const loadPincodeOptions = useCallback((inputValue, callback) => {
-		if(!inputValue || inputValue.length < 6){
-			callback([])
-			return
-		}
-		if(/^\d{6}$/.test(inputValue)){
-			axios.get(`/api/search/pincode/${inputValue}`)
-			.then(response => {
-				if(response.data.success && response.data.data.length > 0){
-					const options = response.data.data.map(po => ({
-						value: po.pincode,
-						label: `${po.pincode} - ${po.name}, ${po.district}, ${po.state}`,
-						data: po
-					}))
-					callback(options)
-				}else{
-					callback([])
-				}
-			})
-			.catch(error => {
-				console.error('Error loading pincode:', error)
-				callback([])
-			})
+	const filtered = materials.filter(m =>
+		m.name.toLowerCase().includes(search.toLowerCase())
+	)
+
+	const toggle = (mat) => {
+		const exists = selected.find(s => s.id === mat.id)
+		if(exists){
+			onChange(selected.filter(s => s.id !== mat.id))
 		}else{
-			callback([])
-		}
-	}, [])
-
-	const fetchVendors = useCallback(async () => {
-		setIsLoading(true)
-		try{
-			const response = await axios.get(`/api/vendor`, {
-				params: {
-					page: currentPage,
-					limit: perPage,
-					search: searchQuery,
-				},
-			})
-			if(response.data.success){
-				setVendors(response.data.data || [])
-				setTotalRows(response.data.meta?.total || response.data.total || 0)
-			}
-		}catch(err){
-			console.error("Error fetching vendors:", err)
-			toast.error(err.response?.data?.message || "Failed to fetch vendors")
-			setVendors([])
-			setTotalRows(0)
-		}finally{
-			setIsLoading(false)
-		}
-	}, [currentPage, perPage, searchQuery])
-
-	useEffect(() => {
-		fetchVendors()
-		fetchActiveMaterials()
-	}, [fetchVendors])
-
-	useEffect(() => {
-		const typingSpeed 	  = isDeleting ? 50 : 100
-		const pauseTime 	  = 1500
-		const timeout 		  = setTimeout(() => {
-			const currentWord = words[currentWordIndex]
-			if(!isDeleting && currentCharIndex < currentWord.length){
-				setPlaceholder(`Search by ${currentWord.substring(0, currentCharIndex + 1)}...`)
-				setCurrentCharIndex(prev => prev + 1)
-			}else 
-			if(isDeleting && currentCharIndex > 0){
-				setPlaceholder(`Search by ${currentWord.substring(0, currentCharIndex - 1)}...`)
-				setCurrentCharIndex(prev => prev - 1)
-			}else 
-			if(!isDeleting && currentCharIndex === currentWord.length){
-				setTimeout(() => setIsDeleting(true), pauseTime)
-			}else 
-			if(isDeleting && currentCharIndex === 0){
-				setIsDeleting(false)
-				setCurrentWordIndex(prev => (prev + 1) % words.length)
-			}
-		}, typingSpeed)
-		return () => clearTimeout(timeout)
-	}, [currentCharIndex, currentWordIndex, isDeleting])
-
-	const handleExcelExport = useCallback(() => {
-		try{
-			const exportData = vendors.map((vendor, index) => ({
-				'S.No'			: (currentPage - 1) * perPage + index + 1,
-				'Vendor Name'	: vendor.name,
-				'Phone'			: vendor.phone,
-				'Email'			: vendor.email,
-				'Location'		: vendor.full_address || `${vendor.pincode || ''}, ${vendor.district || ''}, ${vendor.state || ''}`,
-				'Created At'	: new Date(vendor.created_at).toLocaleString(),
-			}))
-			const wb 	= XLSX.utils.book_new()
-			const ws 	= XLSX.utils.json_to_sheet(exportData)
-			ws['!cols'] = [{ wch: 8 }, { wch: 30 }, { wch: 15 }, { wch: 25 }, { wch: 40 }, { wch: 20 }]
-			XLSX.utils.book_append_sheet(wb, ws, 'Vendors')
-			const timestamp = new Date().toISOString().split('T')[0]
-			XLSX.writeFile(wb, `vendors_${timestamp}.xlsx`)
-			toast.success('Excel file exported successfully')
-		}catch(error){
-			console.error('Error exporting Excel:', error)
-			toast.error('Failed to export Excel file')
-		}
-	}, [vendors, currentPage, perPage])
-
-	const handleAddClick = () => {
-		if(!vendorPermissions.can_add){
-			toast.error("You don't have permission to add vendors")
-			return
-		}
-		setEditingVendor({ isNew: true })
-		setFormData(INITIAL_FORM_STATE)
-		setSelectedPincode(null)
-		setBackendErrors({})
-		setIsModalOpen(true)
-	}
-
-	const handleEditClick = (vendor) => {
-		if(!vendorPermissions.can_edit){
-			toast.error("You don't have permission to edit vendors")
-			return
-		}
-		setEditingVendor(vendor)
-		setFormData({
-			name			: vendor.name || "",
-			phone			: vendor.phone || "",
-			email			: vendor.email || "",
-			pincode			: vendor.pincode || "",
-			district		: vendor.district || "",
-			state			: vendor.state || "",
-			region			: vendor.region || "",
-			country			: vendor.country || "India",
-			full_address	: vendor.full_address || "",
-			notes			: vendor.notes || "",
-			post_office_name: vendor.post_office_name || "", 
-		})
-		if(vendor.pincode){
-			setSelectedPincode({
-				value: vendor.pincode,
-				label: `${vendor.pincode} - ${vendor.district || ''}, ${vendor.state || ''}`,
-				data: {
-					pincode: vendor.pincode,
-					district: vendor.district,
-					state: vendor.state,
-					region: vendor.region,
-					country: vendor.country
-				}
-			})
-		}
-		setBackendErrors({})
-		setIsModalOpen(true)
-	}
-
-	const handleCancelEdit = () => {
-		setEditingVendor(null)
-		setFormData(INITIAL_FORM_STATE)
-		setSelectedPincode(null)
-		setBackendErrors({})
-		setIsModalOpen(false)
-	}
-
-	const handleSaveVendor = async () => {
-		setIsLoading(true)
-		try{
-			const url 	  = editingVendor?.isNew ? `/api/vendor` : `/api/vendor/${editingVendor.id}`
-			const method  = editingVendor?.isNew ? "post" : "put"
-			const response = await axios[method](url, formData)
-			if(response.data.success){
-				toast.success(editingVendor?.isNew ? "Vendor created successfully" : "Vendor updated successfully")
-				handleCancelEdit()
-				fetchVendors()
-			}
-		}catch(err){
-			if(err.response?.status === 400 && err.response.data.errors){
-				setBackendErrors(err.response.data.errors)
-				toast.error("Please fix the errors in the form.")
-			}else{
-				toast.error(err.response?.data?.message || "Failed to save vendor")
-			}
-		}finally{
-			setIsLoading(false)
+			onChange([...selected, { ...mat, unit: getUnitName(mat.unit), quantity: "" }])
 		}
 	}
 
-	const handleDeleteClick = async (vendor) => {
-		if(!window.confirm("Are you sure you want to delete this vendor?")) return
-		setIsLoading(true)
-		try{
-			await axios.delete(`/api/vendor/${vendor.id}`)
-			toast.success("Vendor deleted successfully")
-			fetchVendors()
-		}catch(err){
-			toast.error(err.response?.data?.message || "Failed to delete vendor")
-		}finally{
-			setIsLoading(false)
-		}
+	const updateQty = (id, qty) => {
+		onChange(selected.map(s => s.id === id ? { ...s, quantity: qty } : s))
 	}
 
-	const handleInputChange = (e) => {
-		const { name, value } = e.target
-		setFormData(prev => ({ ...prev, [name]: value }))
-		setBackendErrors(prev => ({ ...prev, [name]: "" }))
+	const removeItem = (id) => {
+		onChange(selected.filter(s => s.id !== id))
 	}
 
-	const columnDefs = useMemo(() => {
-		const baseColumns = [
-			{
-				headerName: "S.No",
-				width: 80,
-				sortable: false,
-				valueGetter: (params) => (currentPage - 1) * perPage + (params.node.rowIndex ?? 0) + 1,
-			},
-			{
-				headerName: "Vendor Name",
-				field: "name",
-				sortable: true,
-				flex: 1,
-				minWidth: 200,
-			},
-			{
-				headerName: "Phone",
-				field: "phone",
-				sortable: true,
-				width: 140,
-				valueFormatter: (params) => params.value || "-",
-			},
-			{
-				headerName: "Email",
-				field: "email",
-				sortable: true,
-				flex: 1,
-				minWidth: 200,
-			}
-		]
-		if(vendorPermissions.can_edit || vendorPermissions.can_delete){
-			baseColumns.push({
-				headerName: "Actions",
-				cellRenderer: (params) => (
-					<div className="flex items-center gap-2">
-					{/* ── WhatsApp Button ── */}
-					<button
-						onClick={() => setWhatsappVendor(params.data)}
-						title="Send WhatsApp"
-						className="p-1 hover:opacity-75 transition-opacity"
-					>
-						<MessageCircle size={16} style={{ color: "#25d366" }} />
-					</button>
+	return(
+		<div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+			{/* Dropdown trigger */}
+			<button
+				type="button"
+				onClick={() => setOpen(!open)}
+				style={{
+					width: "100%", display: "flex", alignItems: "center",
+					justifyContent: "space-between", padding: "10px 14px",
+					borderRadius: 10, border: "1.5px solid #e5e7eb",
+					background: "#f9fafb", cursor: "pointer",
+					fontFamily: "inherit", fontSize: 14, color: "#374151",
+				}}
+			>
+				<span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+					<Package size={15} style={{ color: "#9ca3af" }} />
+					{selected.length === 0
+						? "Select materials..."
+						: `${selected.length} material${selected.length > 1 ? "s" : ""} selected`}
+				</span>
+				<ChevronDown
+					size={15}
+					style={{ color: "#9ca3af", transform: open ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}
+				/>
+			</button>
 
-					{vendorPermissions.can_edit && (
-						<button
-						onClick={() => handleEditClick(params.data)}
-						className="p-1 text-blue-600 hover:text-blue-800 transition-colors"
-						title="Edit"
-						>
-						<Edit size={16} style={{ color: theme.primaryGradientStart }} />
-						</button>
-					)}
-					{vendorPermissions.can_delete && (
-						<button
-						onClick={() => handleDeleteClick(params.data)}
-						className="p-1 text-red-600 hover:text-red-800 transition-colors"
-						title="Delete"
-						>
-						<Trash2 size={16} />
-						</button>
-					)}
+			{/* Dropdown list */}
+			{open && (
+				<div style={{
+					border: "1.5px solid #e5e7eb", borderRadius: 12,
+					overflow: "hidden", boxShadow: "0 6px 24px rgba(0,0,0,0.09)"
+				}}>
+					<div style={{ padding: "8px 10px", borderBottom: "1px solid #f3f4f6", background: "#fff" }}>
+						<div style={{
+							display: "flex", alignItems: "center", gap: 8,
+							background: "#f3f4f6", borderRadius: 8, padding: "6px 10px"
+						}}>
+							<Search size={13} style={{ color: "#9ca3af", flexShrink: 0 }} />
+							<input
+								value={search}
+								onChange={e => setSearch(e.target.value)}
+								placeholder="Search materials..."
+								style={{
+									border: "none", background: "transparent", outline: "none",
+									fontSize: 13, width: "100%", fontFamily: "inherit", color: "#374151"
+								}}
+							/>
+						</div>
 					</div>
-				),
-				minWidth: 130,
-				sortable: false,
-			})
-		}
-		return baseColumns
-	}, [currentPage, perPage, vendorPermissions, theme.primaryGradientStart])
+					<div style={{ maxHeight: 180, overflowY: "auto", background: "#fff" }}>
+						{filtered.length === 0 ? (
+							<div style={{ padding: "14px", textAlign: "center", fontSize: 13, color: "#9ca3af" }}>
+								No materials found
+							</div>
+						) : filtered.map(mat => {
+							const isSelected = !!selected.find(s => s.id === mat.id)
+							const unitName   = getUnitName(mat.unit)
+							return (
+								<div
+									key={mat.id}
+									onClick={() => toggle(mat)}
+									style={{
+										display: "flex", alignItems: "center", justifyContent: "space-between",
+										padding: "10px 14px", cursor: "pointer",
+										background: isSelected ? "#f0fdf4" : "#fff",
+										borderBottom: "1px solid #f9fafb",
+									}}
+								>
+									<div>
+										<div style={{ fontWeight: 600, fontSize: 13, color: "#111827" }}>{mat.name}</div>
+										<div style={{ fontSize: 11, color: "#6b7280" }}>
+											Unit: {unitName} · ₹{Number(mat.standard_rate).toLocaleString()}/{unitName}
+										</div>
+									</div>
+									<div style={{
+										width: 19, height: 19, borderRadius: 5, flexShrink: 0,
+										border: isSelected ? "none" : "1.5px solid #d1d5db",
+										background: isSelected ? "#16a34a" : "transparent",
+										display: "flex", alignItems: "center", justifyContent: "center"
+									}}>
+										{isSelected && <Check size={11} color="#fff" />}
+									</div>
+								</div>
+							)
+						})}
+					</div>
+				</div>
+			)}
 
-	const renderVendorForm = () => {
-		return (
-			<div className="space-y-6">
-				<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
-					<ThemeUI.FormField label="Vendor Name" name="name" error={backendErrors.name} required>
-						<ThemeUI.Input
-							name			= "name"
-							value			= {formData.name}
-							onChange		= {handleInputChange}
-							placeholder		= "Enter vendor name"
-							error			= {backendErrors.name}
-						/>
-					</ThemeUI.FormField>
-					<ThemeUI.FormField label="Phone Number" name="phone" error={backendErrors.phone}>
-						<ThemeUI.Input
-							type			= "tel"
-							name			= "phone"
-							value			= {formData.phone}
-							onChange		= {handleInputChange}
-							placeholder		= "10-digit phone number (optional)"
-							maxLength		= {10}
-							error			= {backendErrors.phone}
-						/>
-					</ThemeUI.FormField>
-					<ThemeUI.FormField label="Email Address" name="email" error={backendErrors.email}>
-						<ThemeUI.Input
-							type			= "email"
-							name			= "email"
-							value			= {formData.email}
-							onChange		= {handleInputChange}
-							placeholder		= "vendor@example.com"
-							error			= {backendErrors.email}
-						/>
-					</ThemeUI.FormField>
-					<ThemeUI.FormField label="Search by Pincode" name="pincode" error={backendErrors.pincode}>
-						<ThemeUI.AutoComplete
-							id				= "pincode_autocomplete"
-							name			= "pincode"
-							value			= {selectedPincode ? [selectedPincode] : []}
-							loadOptions		= {loadPincodeOptions}
-							onChange		= {(selected) => {
-								const selectedOption = selected?.[0] || null
-								setSelectedPincode(selectedOption)
-								if(selectedOption?.data){
-									const po = selectedOption.data
-									setFormData(prev => ({
-										...prev,
-										post_office_name: po.name,
-										pincode: po.pincode,
-										district: po.district,
-										state: po.state,
-										region: po.region || "",
-										country: po.country || "India",
-									}))
-								}else{
-									setFormData(prev => ({
-										...prev,
-										pincode: "",
-										district: "",
-										state: "",
-										region: "",
-									}))
-								}
-								setBackendErrors(prev => ({ ...prev, pincode: undefined }))
-							}}
-							placeholder="Type 6-digit pincode..."
-							isMulti={false}
-							minInputLength={0}
-							cacheOptions
-						/>
-					</ThemeUI.FormField>
+			{/* Selected materials — 3 per row grid */}
+			{selected.length > 0 && (
+				<div style={{
+					display: "grid",
+					gridTemplateColumns: "repeat(3, 1fr)",
+					gap: 8
+				}}>
+					{selected.map(mat => (
+						<div key={mat.id} style={{
+							position: "relative",
+							display: "flex", flexDirection: "column", gap: 6,
+							padding: "9px 10px 9px 10px",
+							background: "#f9fafb", borderRadius: 10,
+							border: "1.5px solid #e5e7eb", minWidth: 0
+						}}>
+							<button
+								type="button"
+								onClick={() => removeItem(mat.id)}
+								style={{
+									position: "absolute", top: 5, right: 5,
+									background: "none", border: "none", cursor: "pointer",
+									color: "#9ca3af", padding: 0, display: "flex", lineHeight: 1
+								}}
+							>
+								<X size={12} />
+							</button>
+							<div
+								title={mat.name}
+								style={{
+									fontWeight: 700, fontSize: 12, color: "#111827",
+									whiteSpace: "nowrap", overflow: "hidden",
+									textOverflow: "ellipsis", paddingRight: 14
+								}}
+							>
+								{mat.name}
+							</div>
+							<div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+								<input
+									type="number"
+									min="0"
+									value={mat.quantity}
+									onChange={e => updateQty(mat.id, e.target.value)}
+									placeholder="0"
+									style={{
+										flex: 1, minWidth: 0,
+										padding: "4px 6px", borderRadius: 6,
+										border: "1.5px solid #e5e7eb", background: "#fff",
+										fontFamily: "inherit", fontSize: 12, color: "#111827",
+										outline: "none", textAlign: "center"
+									}}
+								/>
+								<span style={{ fontSize: 11, color: "#6b7280", flexShrink: 0 }}>
+									{mat.unit}
+								</span>
+							</div>
+						</div>
+					))}
 				</div>
-				<div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-					<ThemeUI.FormField label="Full Address" name="full_address" error={backendErrors.full_address}>
-						<ThemeUI.Textarea
-							name		= "full_address"
-							value		= {formData.full_address}
-							onChange	= {handleInputChange}
-							rows		= {5}
-							placeholder	= "Enter complete address (street, landmark, city, state, pincode, etc.)"
-							error		= {backendErrors.full_address}
-						/>
-					</ThemeUI.FormField>
-					<ThemeUI.FormField label="Notes" name="notes" error={backendErrors.notes}>
-						<ThemeUI.Textarea
-							name			= "notes"
-							value			= {formData.notes}
-							onChange		= {handleInputChange}
-							rows			= {5}
-							placeholder		= "Additional notes about the vendor, payment terms, contact details, etc."
-							error			= {backendErrors.notes}
-						/>
-					</ThemeUI.FormField>
-				</div>
-				<div className="flex justify-end gap-3 pt-6 border-t border-gray-200">
-					<ThemeUI.Button
-						onClick={handleCancelEdit}
-						gradientColors={{ start: theme.secondaryGradientStart, end: theme.secondaryGradientEnd }}
-					>
-						Cancel
-					</ThemeUI.Button>
-					<ThemeUI.Button
-						onClick={handleSaveVendor}
-						disabled={isLoading}
-						gradientColors={{ start: theme.primaryGradientStart, end: theme.primaryGradientEnd }}
-						direction={theme.gradientDirection}
-					>
-						{isLoading ? (
-							<>
-								<Loader size={16} className="mr-2 animate-spin" />
-								Saving...
-							</>
-						) : editingVendor?.isNew ? (
-							"Create Vendor"
-						) : (
-							"Update Vendor"
-						)}
-					</ThemeUI.Button>
-				</div>
-			</div>
-		)
+			)}
+		</div>
+	)
+}
+
+// ── Payment Received Form ──
+function PaymentReceivedForm({ paymentData, onChange, theme }) {
+	const { amount, paymentMode, paymentDate, transactionRef, invoiceNumber } = paymentData
+
+	const inputStyle = {
+		width: "100%", padding: "10px 12px", borderRadius: 10,
+		border: "1.5px solid #e5e7eb", fontFamily: "inherit",
+		fontSize: 13, color: "#374151", outline: "none",
+		boxSizing: "border-box", background: "#fff",
+		transition: "border-color 0.15s"
+	}
+
+	const labelStyle = {
+		display: "block", fontSize: 13, fontWeight: 600,
+		color: "#374151", marginBottom: 6
 	}
 
 	return (
-		<Layout>
-			<div className="flex items-center mb-4">
-				<h1 className="text-2xl font-bold max-sm:text-xl flex-1">Vendors Management</h1>
-				<nav className="flex items-center text-sm text-gray-500 whitespace-nowrap overflow-x-auto">
-					<ol className="flex items-center">
-						<li><a href="/dashboard" className="hover:text-blue-600 transition-colors">Home</a></li>
-						<li className="flex items-center"><ChevronRight className="h-4 w-4 mx-1" /></li>
-						<li style={{ color: theme.primaryGradientStart }} className="font-medium">Vendors</li>
-					</ol>
-				</nav>
-			</div>
-			<div className="mb-4 rounded-lg w-full">
-				<div className="flex flex-col sm:flex-row justify-between items-center gap-2">
-					<div className="w-full sm:w-1/3">
-						<ThemeUI.Input
-							value={searchQuery}
-							onChange={(e) => {
-								setSearchQuery(e.target.value)
-								setCurrentPage(1)
-							}}
-							placeholder={placeholder}
-							leftElement={<Search size={16} className="text-gray-400" />}
-						/>
-					</div>
-					<div className="flex max-sm:h-10 justify-between gap-2 w-full sm:w-auto max-sm:text-sm">
-						<ThemeUI.Button 
-							onClick			= {handleExcelExport} 
-							gradientColors	= {{ start: theme.secondaryGradientStart, end: theme.secondaryGradientEnd }} 
-							direction		= {theme.gradientDirection}
-						>
-							<Download size={16} className="mr-2" /> Export Excel
-						</ThemeUI.Button>
-						{vendorPermissions.can_add && (
-							<ThemeUI.Button 
-								onClick		   = {handleAddClick} 
-								gradientColors = {{ start: theme.primaryGradientStart, end: theme.primaryGradientEnd }} 
-								direction      = {theme.gradientDirection}
-							>
-								<Plus size={16} className="mr-2" /> Add Vendor
-							</ThemeUI.Button>
-						)}
-					</div>
+		<div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+			{/* Amount — prominent */}
+			<div>
+				<label style={labelStyle}>
+					Payment Amount <span style={{ color: "#ef4444", marginLeft: 2 }}>*</span>
+				</label>
+				<div style={{ position: "relative" }}>
+					<span style={{
+						position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)",
+						fontSize: 15, fontWeight: 700, color: "#16a34a", pointerEvents: "none"
+					}}>₹</span>
+					<input
+						type="number"
+						min="0"
+						step="0.01"
+						placeholder="0.00"
+						value={amount}
+						onChange={e => onChange({ ...paymentData, amount: e.target.value })}
+						style={{
+							...inputStyle,
+							paddingLeft: 28,
+							fontSize: 15, fontWeight: 600,
+							border: "1.5px solid #bbf7d0",
+							background: "#f0fdf4",
+						}}
+						onFocus={e => e.target.style.borderColor = theme.primaryGradientStart}
+						onBlur={e  => e.target.style.borderColor = "#bbf7d0"}
+					/>
 				</div>
 			</div>
-			<div style={{ "--header-gradient": `linear-gradient(${theme.gradientDirection}, ${theme.primaryGradientStart}, ${theme.primaryGradientEnd})` }}>
-				<AgGridReact
-					ref={gridRef}
-					className="custom-ag-grid"
-					domLayout="autoHeight"
-					theme={themeQuartz.withParams({
-						spacing: 7,
-						headerHeight: 45,
-						headerFontSize: 16,
-						fontSize: 13,
-						headerTextColor: "white",
-					})}
-					defaultColDef={{ resizable: true, sortable: true, filter: false }}
-					columnDefs={columnDefs}
-					rowData={vendors}
-					rowHeight={55}
-					pagination={true}
-					paginationPageSize={perPage}
-					paginationPageSizeSelector={[10, 20, 50, 100]}
-					onPaginationChanged={(params) => {
-						if(!params.api) return
-						const newPage = params.api.paginationGetCurrentPage() + 1
-						const newPageSize = params.api.paginationGetPageSize()
-						let shouldRefetch = false
-						if(newPage !== currentPage){
-							setCurrentPage(newPage)
-							shouldRefetch = true
-						}
-						if(newPageSize !== perPage){
-							setPerPage(newPageSize)
-							setCurrentPage(1)
-							shouldRefetch = true
-						}
-						if(shouldRefetch){
-							setTimeout(() => gridRef.current?.api?.ensureIndexVisible(0), 100)
-						}
-					}}
-					noRowsOverlayComponent={NoRowsOverlay}
-					noRowsOverlayComponentParams={{ text: "No Vendors Found" }}
-					loading={isLoading}
-				/>
+
+			{/* Payment Date + Mode — side by side */}
+			<div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+				<div>
+					<label style={labelStyle}>Payment Date <span style={{ color: "#ef4444", marginLeft: 2 }}>*</span></label>
+					<input
+						type="date"
+						value={paymentDate}
+						onChange={e => onChange({ ...paymentData, paymentDate: e.target.value })}
+						style={inputStyle}
+						onFocus={e => e.target.style.borderColor = theme.primaryGradientStart}
+						onBlur={e  => e.target.style.borderColor = "#e5e7eb"}
+					/>
+				</div>
+				<div>
+					<label style={labelStyle}>Payment Mode <span style={{ color: "#ef4444", marginLeft: 2 }}>*</span></label>
+					<select
+						value={paymentMode}
+						onChange={e => onChange({ ...paymentData, paymentMode: e.target.value })}
+						style={{ ...inputStyle, cursor: "pointer" }}
+						onFocus={e => e.target.style.borderColor = theme.primaryGradientStart}
+						onBlur={e  => e.target.style.borderColor = "#e5e7eb"}
+					>
+						{PAYMENT_MODES.map(m => (
+							<option key={m.value} value={m.value}>{m.label}</option>
+						))}
+					</select>
+				</div>
 			</div>
-			<Modal
-				isOpen={isModalOpen}
-				onClose={handleCancelEdit}
-				title={editingVendor?.isNew ? "Add New Vendor" : "Edit Vendor"}
-				size="full"
-			>
-				{renderVendorForm()}
-			</Modal>
-			{whatsappVendor && (
-				<VendorTemplate
-					vendor={whatsappVendor}
-        			materials={materials}
-					siteName="Grandee Constructions"  
-					onClose={() => setWhatsappVendor(null)}
-				/>
-			)}
-		</Layout>
+
+			{/* Transaction Ref + Invoice No — side by side */}
+			<div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+				<div>
+					<label style={labelStyle}>
+						Transaction Ref
+						<span style={{ fontSize: 11, color: "#9ca3af", fontWeight: 400, marginLeft: 4 }}>(optional)</span>
+					</label>
+					<input
+						type="text"
+						placeholder="UPI ID / Cheque No / TXN ID"
+						value={transactionRef}
+						onChange={e => onChange({ ...paymentData, transactionRef: e.target.value })}
+						style={inputStyle}
+						onFocus={e => e.target.style.borderColor = theme.primaryGradientStart}
+						onBlur={e  => e.target.style.borderColor = "#e5e7eb"}
+					/>
+				</div>
+				<div>
+					<label style={labelStyle}>
+						Invoice Number
+						<span style={{ fontSize: 11, color: "#9ca3af", fontWeight: 400, marginLeft: 4 }}>(optional)</span>
+					</label>
+					<input
+						type="text"
+						placeholder="INV-001"
+						value={invoiceNumber}
+						onChange={e => onChange({ ...paymentData, invoiceNumber: e.target.value })}
+						style={inputStyle}
+						onFocus={e => e.target.style.borderColor = theme.primaryGradientStart}
+						onBlur={e  => e.target.style.borderColor = "#e5e7eb"}
+					/>
+				</div>
+			</div>
+		</div>
 	)
 }
-export default Vendor
+
+// ── Default payment state ──
+const INITIAL_PAYMENT = {
+	amount:         "",
+	paymentMode:    "cash",
+	paymentDate:    new Date().toISOString().split("T")[0],
+	transactionRef: "",
+	invoiceNumber:  "",
+}
+
+export default function VendorWhatsAppModal({
+	vendor,
+	materials   = [],
+	siteName    = "Construction Site Management",
+	initialTemplate = null,   // e.g. "payment" — opens straight into that template
+	initialPayment  = null,   // pre-filled payment fields for the "payment" template
+	onClose
+}) {
+	const { theme }                                 = useTheme()
+	const [step, setStep]                           = useState(initialTemplate ? "compose" : "pick")
+	const [activeTemplate, setActiveTemplate]       = useState(initialTemplate)
+	const [selectedMaterials, setSelectedMaterials] = useState([])
+	const [customNote, setCustomNote]               = useState("")
+	const [receivedDate, setReceivedDate]           = useState(new Date().toISOString().split("T")[0])
+	const [paymentData, setPaymentData]             = useState(initialPayment ? { ...INITIAL_PAYMENT, ...initialPayment } : INITIAL_PAYMENT)
+
+	const TEMPLATES = [
+		{
+			id:    "enquiry",
+			icon:  <Package size={20} />,
+			label: "Material Enquiry",
+			desc:  "Ask vendor for rates & availability of materials",
+		},
+		{
+			id:    "received",
+			icon:  <ClipboardCheck size={20} />,
+			label: "Materials Received",
+			desc:  "Confirm to vendor that materials have been received",
+		},
+		{
+			id:    "payment",
+			icon:  <IndianRupee size={20} />,
+			label: "Pay Off",
+			desc:  "Notify vendor of payment made against their invoice",
+		},
+	]
+
+	const paymentModeLabel = PAYMENT_MODES.find(m => m.value === paymentData.paymentMode)?.label || "Cash"
+
+	const previewMessage = useMemo(() => {
+		if(!activeTemplate) return ""
+
+		if(activeTemplate === "enquiry"){
+			const lines = selectedMaterials.length > 0
+				? selectedMaterials.map(m => `• ${m.name}\n  Quantity: ${m.quantity || "__"} ${m.unit}`).join("\n")
+				: "• [No materials selected]"
+			return `Dear ${vendor.name},\n\nWe would like to enquire about the following materials:\n\n*Materials Required:*\n${lines}\n\nPlease provide your best rates and availability.\n\nThank you,\n${siteName}`
+		}
+
+		if(activeTemplate === "received"){
+			const lines = selectedMaterials.length > 0
+				? selectedMaterials.map(m => `• ${m.name} — ${m.quantity || "__"} ${m.unit}`).join("\n")
+				: "• [No materials selected]"
+			return `Dear ${vendor.name},\n\nWe are pleased to confirm that the following materials have been received at our site on *${receivedDate}*:\n\n*Materials Received:*\n${lines}\n\nThank you for the timely delivery. Please share the invoice at your earliest convenience.\n\nRegards,\n${siteName}`
+		}
+
+		if(activeTemplate === "payment"){
+			const amt     = paymentData.amount ? `₹${Number(paymentData.amount).toLocaleString("en-IN")}` : "₹__"
+			const refLine = paymentData.transactionRef ? `\nTransaction Ref: *${paymentData.transactionRef}*` : ""
+			const invLine = paymentData.invoiceNumber  ? `\nInvoice No: *${paymentData.invoiceNumber}*`      : ""
+			return `Hi ${vendor.name},\n\nWe would like to inform you that a payment of *${amt}* has been made to your account.\n\n*Payment Details:*\n• Date: *${paymentData.paymentDate}*\n• Mode: *${paymentModeLabel}*${refLine}${invLine}\n\nKindly acknowledge receipt of this payment.\n\nThank you,\n${siteName}`
+		}
+
+		return ""
+	}, [activeTemplate, selectedMaterials, vendor, siteName, receivedDate, paymentData, paymentModeLabel])
+
+	const finalMessage = previewMessage + (customNote.trim() ? `\n\n${customNote.trim()}` : "")
+
+	// Validation per template
+	const hasPhone = !!vendor?.phone
+	const canSend = useMemo(() => {
+		if(!hasPhone) return false
+		if(activeTemplate === "enquiry" || activeTemplate === "received") return selectedMaterials.length > 0
+		if(activeTemplate === "payment") return !!paymentData.amount && Number(paymentData.amount) > 0
+		return false
+	}, [hasPhone, activeTemplate, selectedMaterials, paymentData.amount])
+
+	const handleSend = () => {
+		if(!hasPhone) return
+		const phone   = vendor.phone?.replace(/\D/g, "")
+		const encoded = encodeURIComponent(finalMessage)
+		window.open(`https://wa.me/91${phone}?text=${encoded}`, "_blank")
+	}
+
+	const handleTemplateSelect = (id) => {
+		setActiveTemplate(id)
+		setSelectedMaterials([])
+		setCustomNote("")
+		setPaymentData(INITIAL_PAYMENT)
+		setStep("compose")
+	}
+
+	const handleBack = () => {
+		setStep("pick")
+		setActiveTemplate(null)
+		setSelectedMaterials([])
+		setCustomNote("")
+		setPaymentData(INITIAL_PAYMENT)
+	}
+
+	const tpl = TEMPLATES.find(t => t.id === activeTemplate)
+
+	const modalTitle = (
+		<div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+			<div style={{
+				width: 34, height: 34, borderRadius: 9,
+				background: "linear-gradient(135deg, #25d366, #128c7e)",
+				display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
+			}}>
+				<WhatsAppIcon size={18} />
+			</div>
+			<div>
+				<div style={{ fontSize: 15, fontWeight: 700, color: "#111827", lineHeight: 1.2 }}>
+					{step === "pick" ? "WhatsApp Message" : tpl?.label}
+				</div>
+				<div style={{ fontSize: 11, color: "#9ca3af", fontWeight: 400 }}>
+					{vendor.name} · {vendor.phone || "No phone on file"}
+				</div>
+			</div>
+		</div>
+	)
+
+	return (
+		<Modal
+			isOpen={true}
+			onClose={onClose}
+			title={modalTitle}
+			size="xl"
+		>
+			{/* ── Step 1: Pick Template ── */}
+			{step === "pick" && (
+				<div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+					<p style={{ margin: "0 0 4px", fontSize: 13, color: "#6b7280" }}>
+						Choose a message template to send to this vendor:
+					</p>
+					{TEMPLATES.map(t => (
+						<button
+							key={t.id}
+							type="button"
+							onClick={() => handleTemplateSelect(t.id)}
+							style={{
+								display: "flex", alignItems: "center", gap: 14,
+								padding: "16px 18px", borderRadius: 14,
+								border: "1.5px solid #e5e7eb",
+								background: "#fff", cursor: "pointer",
+								textAlign: "left", fontFamily: "inherit",
+								transition: "all 0.15s",
+								boxShadow: "0 1px 4px rgba(0,0,0,0.04)"
+							}}
+							onMouseEnter={e => {
+								e.currentTarget.style.borderColor = theme.primaryGradientStart
+								e.currentTarget.style.boxShadow   = `0 4px 14px ${theme.primaryGradientStart}22`
+								e.currentTarget.style.background   = "#fafafa"
+							}}
+							onMouseLeave={e => {
+								e.currentTarget.style.borderColor = "#e5e7eb"
+								e.currentTarget.style.boxShadow   = "0 1px 4px rgba(0,0,0,0.04)"
+								e.currentTarget.style.background   = "#fff"
+							}}
+						>
+							<div style={{
+								width: 46, height: 46, borderRadius: 12, flexShrink: 0,
+								background: `linear-gradient(135deg, ${theme.primaryGradientStart}1a, ${theme.primaryGradientEnd}1a)`,
+								display: "flex", alignItems: "center", justifyContent: "center",
+								color: theme.primaryGradientStart
+							}}>
+								{t.icon}
+							</div>
+							<div style={{ flex: 1 }}>
+								<div style={{ fontWeight: 700, fontSize: 14, color: "#111827" }}>{t.label}</div>
+								<div style={{ fontSize: 12, color: "#9ca3af", marginTop: 2 }}>{t.desc}</div>
+							</div>
+							<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" strokeWidth="2.5">
+								<path d="M9 18l6-6-6-6" />
+							</svg>
+						</button>
+					))}
+				</div>
+			)}
+
+			{/* ── Step 2: Compose ── */}
+			{step === "compose" && tpl && (
+				<div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+					<button
+						type="button"
+						onClick={handleBack}
+						style={{
+							display: "inline-flex", alignItems: "center", gap: 5,
+							background: "none", border: "none", cursor: "pointer",
+							fontSize: 12, color: "#6b7280", fontFamily: "inherit",
+							padding: 0, width: "fit-content"
+						}}
+					>
+						<ArrowLeft size={13} /> Back to templates
+					</button>
+
+					{/* ── Material Enquiry & Received: date + material selector ── */}
+					{(activeTemplate === "enquiry" || activeTemplate === "received") && (
+						<>
+							{activeTemplate === "received" && (
+								<ThemeUI.FormField label="Date Received" name="received_date">
+									<ThemeUI.Input
+										type="date"
+										name="received_date"
+										value={receivedDate}
+										onChange={e => setReceivedDate(e.target.value)}
+									/>
+								</ThemeUI.FormField>
+							)}
+							<div>
+								<label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 8 }}>
+									{activeTemplate === "enquiry" ? "Materials to Enquire" : "Materials Received"}
+									<span style={{ color: "#ef4444", marginLeft: 2 }}>*</span>
+								</label>
+								<MaterialSelector
+									materials={materials}
+									selected={selectedMaterials}
+									onChange={setSelectedMaterials}
+								/>
+							</div>
+						</>
+					)}
+
+					{/* ── Payment Received form ── */}
+					{activeTemplate === "payment" && (
+						<PaymentReceivedForm
+							paymentData={paymentData}
+							onChange={setPaymentData}
+							theme={theme}
+						/>
+					)}
+
+					{/* Message preview */}
+					<div>
+						<label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 8 }}>
+							Message Preview
+						</label>
+						<div style={{
+							background: "#f0fdf4", border: "1.5px solid #bbf7d0",
+							borderRadius: 12, padding: "14px 16px",
+							fontSize: 13, color: "#166534", lineHeight: 1.75,
+							whiteSpace: "pre-wrap", minHeight: 100,
+							maxHeight: 220, overflowY: "auto", fontFamily: "inherit"
+						}}>
+							{finalMessage || <span style={{ color: "#9ca3af" }}>Fill in the details above to preview the message…</span>}
+						</div>
+					</div>
+
+					{/* Optional note */}
+					<div>
+						<label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 8 }}>
+							Additional Note{" "}
+							<span style={{ fontSize: 12, color: "#9ca3af", fontWeight: 400 }}>(optional)</span>
+						</label>
+						<textarea
+							value={customNote}
+							onChange={e => setCustomNote(e.target.value)}
+							placeholder="Add any extra details..."
+							rows={2}
+							style={{
+								width: "100%", padding: "10px 12px", borderRadius: 10,
+								border: "1.5px solid #e5e7eb", fontFamily: "inherit",
+								fontSize: 13, color: "#374151", resize: "vertical",
+								outline: "none", boxSizing: "border-box", lineHeight: 1.6,
+								transition: "border-color 0.15s"
+							}}
+							onFocus={e => e.target.style.borderColor = theme.primaryGradientStart}
+							onBlur={e  => e.target.style.borderColor = "#e5e7eb"}
+						/>
+					</div>
+
+					{/* Footer buttons */}
+					<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, paddingTop: 2 }}>
+						{!hasPhone && (
+							<span style={{ fontSize: 12, color: "#dc2626", fontWeight: 500 }}>
+								This vendor has no phone number on file.
+							</span>
+						)}
+						<div style={{ display: "flex", gap: 10, marginLeft: "auto" }}>
+							<ThemeUI.Button
+								onClick={onClose}
+								gradientColors={{ start: theme.secondaryGradientStart, end: theme.secondaryGradientEnd }}
+							>
+								Cancel
+							</ThemeUI.Button>
+							<ThemeUI.Button
+								onClick={handleSend}
+								disabled={!canSend}
+								gradientColors={{ start: theme.primaryGradientStart, end: theme.primaryGradientEnd }}
+								direction={theme.gradientDirection}
+							>
+								Send via WhatsApp
+							</ThemeUI.Button>
+						</div>
+					</div>
+				</div>
+			)}
+		</Modal>
+	)
+}

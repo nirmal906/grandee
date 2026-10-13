@@ -672,13 +672,26 @@ const materialInvoiceController = {
                 return res.status(404).json({ success: false, message: 'Material invoice not found' });
             }
 
-            if (invoice.invoice_photo) {
-                const filePath = path.join(UPLOAD_DIR, invoice.invoice_photo);
-                if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-            }
-
+            // Child rows reference this invoice via foreign keys (invoice_id).
+            // Every create/update writes a row to material_invoice_history, and the
+            // DB rejects deleting the parent while those rows exist — remove them
+            // (and the items) first, inside the same transaction.
+            await MaterialInvoiceHistory.destroy({ where: { invoice_id: id }, transaction });
+            await MaterialInvoiceItem.destroy({ where: { invoice_id: id }, transaction });
             await invoice.destroy({ transaction });
             await transaction.commit();
+
+            // Remove the uploaded photo only AFTER the DB delete has succeeded,
+            // so a failed delete never leaves an invoice pointing at a missing file.
+            if (invoice.invoice_photo) {
+                try {
+                    const filePath = path.join(UPLOAD_DIR, invoice.invoice_photo);
+                    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+                } catch (fileErr) {
+                    console.error('deleteMaterialInvoice photo cleanup error:', fileErr);
+                }
+            }
+
             res.status(200).json({ success: true, message: 'Material invoice deleted successfully' });
         } catch (err) {
             await transaction.rollback();

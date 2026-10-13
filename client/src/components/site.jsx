@@ -34,6 +34,7 @@ function Site() {
 	const [isLoading, setIsLoading] = useState(false)
 	const [totalRows, setTotalRows] = useState(0)
 	const [whatsappSite, setWhatsappSite] = useState(null)
+	const [whatsappPayment, setWhatsappPayment] = useState(null) // set when auto-opened after "Record Payment"
 	const [perPage, setPerPage] = useState(10)
 	const [currentPage, setCurrentPage] = useState(1)
 	const [sites, setSites] = useState([])
@@ -448,6 +449,11 @@ function Site() {
 				await fetchPaymentSummary(selectedSite.id)
 				await fetchPayments(selectedSite.id)
 				fetchSites()
+				// New payment only — open the Payment Received WhatsApp template for this client
+				if(!editingPayment){
+					setWhatsappPayment({ ...paymentFormData })
+					setWhatsappSite(selectedSite)
+				}
 			}
 		}catch(err){
 			if(err.response?.status === 400 && err.response.data.errors){
@@ -989,7 +995,9 @@ function Site() {
 			{whatsappSite && (
 				<SiteTemplate
 					site={whatsappSite}
-					onClose={() => setWhatsappSite(null)}
+					initialTemplate={whatsappPayment ? "received" : null}
+					initialPayment={whatsappPayment}
+					onClose={() => { setWhatsappSite(null); setWhatsappPayment(null) }}
 				/>
 			)}
 		</Layout>
