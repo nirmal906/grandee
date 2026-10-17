@@ -71,14 +71,20 @@ export default function CustomerWhatsAppModal({
 
 	const enteredAmountNum = parseFloat(enteredAmount) || 0
 
-	// Received Payment: show the latest balance from the payment history
-	// (budget − all recorded payments), which already includes the payment just
-	// completed. Fall back to budget − entered amount only until the summary loads.
-	// Request Payment keeps its original calculation.
+	// Request & Received Payment: show the latest balance from the payment history
+	// (budget − all recorded payments). Fall back to budget − entered amount only
+	// until the summary loads.
 	const latestBalance = paymentSummary ? parseFloat(paymentSummary.balance || 0) : null
-	const remaining = (activeTemplate === "received" && latestBalance !== null)
+	const remaining = latestBalance !== null
 		? latestBalance
 		: totalBudget - enteredAmountNum
+
+	// Warn when a requested amount is more than what is still outstanding
+	const amountExceeds = enteredAmount !== "" && (
+		latestBalance !== null
+			? (activeTemplate === "request" && enteredAmountNum > latestBalance)
+			: remaining < 0
+	)
 
 	const fmt = (val) => `₹${Number(val).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`
 
@@ -376,9 +382,9 @@ ${COMPANY_NAME}`
 									onChange={e => setEnteredAmount(e.target.value)}
 									placeholder="0.00"
 								/>
-								{remaining < 0 && enteredAmount !== "" && (
+								{amountExceeds && (
 									<div style={{ fontSize: 11, color: "#ef4444", marginTop: 4 }}>
-										⚠ Amount exceeds total budget
+										⚠ {latestBalance !== null ? "Amount exceeds remaining balance" : "Amount exceeds total budget"}
 									</div>
 								)}
 							</ThemeUI.FormField>
