@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react"
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import axios from "../utils/axios"
 import { toast } from "react-toastify"
 import { AgGridReact } from "ag-grid-react"
@@ -24,6 +24,10 @@ function VendorSummary() {
     const [siteInvoices, setSiteInvoices] = useState(null)
     const [isLoading, setIsLoading] = useState(false)
     const [searchQuery, setSearchQuery] = useState("")
+
+    // Pending toggle — when ON, the vendor table auto-sorts by Balance (highest dues first)
+    const [pendingOnly, setPendingOnly] = useState(false)
+    const vendorGridApiRef = useRef(null)
 
     // Pagination
     const [totalRows, setTotalRows] = useState(0)
@@ -140,6 +144,18 @@ function VendorSummary() {
     useEffect(() => {
         fetchVendors()
     }, [fetchVendors])
+
+    // Pending toggle → sort the vendor grid by Balance (desc) so pending dues float to the top.
+    // Switching OFF clears the sort and restores the default order.
+    useEffect(() => {
+        const api = vendorGridApiRef.current
+        if (!api || api.isDestroyed?.()) return
+        api.applyColumnState({
+            state: [{ colId: "total_balance", sort: pendingOnly ? "desc" : null }],
+            defaultState: { sort: null },
+        })
+        api.paginationGoToFirstPage()
+    }, [pendingOnly, view])
 
     // Typing animation
     useEffect(() => {
@@ -809,6 +825,31 @@ function VendorSummary() {
                                     leftElement={<Search size={16} className="text-gray-400" />}
                                 />
                             </div>
+
+                            {/* Pending toggle — top-right, above the table */}
+                            <div className="flex items-center gap-2 sm:ml-auto self-end sm:self-auto">
+                                <span className="text-sm font-medium text-gray-700">Pending</span>
+                                <button
+                                    type="button"
+                                    role="switch"
+                                    aria-checked={pendingOnly}
+                                    aria-label="Show pending vendors first"
+                                    onClick={() => setPendingOnly(prev => !prev)}
+                                    className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none"
+                                    style={{
+                                        background: pendingOnly
+                                            ? `linear-gradient(${theme.gradientDirection}, ${theme.primaryGradientStart}, ${theme.primaryGradientEnd})`
+                                            : "#d1d5db",
+                                    }}
+                                >
+                                    <span
+                                        className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${pendingOnly ? "translate-x-5" : "translate-x-0.5"}`}
+                                    />
+                                </button>
+                                <span className={`text-xs font-semibold w-7 ${pendingOnly ? "text-emerald-600" : "text-gray-400"}`}>
+                                    {pendingOnly ? "ON" : "OFF"}
+                                </span>
+                            </div>
                         </div>
                     </div>
 
@@ -821,6 +862,12 @@ function VendorSummary() {
                             rowData={vendors}
                             rowHeight={55}
                             columnDefs={vendorListColumnDefs}
+                            onGridReady={(params) => {
+                                vendorGridApiRef.current = params.api
+                                if (pendingOnly) {
+                                    params.api.applyColumnState({ state: [{ colId: "total_balance", sort: "desc" }] })
+                                }
+                            }}
                             pagination
                             paginationPageSize={10}
                             paginationPageSizeSelector={[10, 20, 50, 100]}
