@@ -401,12 +401,29 @@ function Dashboard() {
 		);
 	};
 
+	const PaymentBadge = (params) => {
+		if (!params.value) return null;
+		const colorMap = {
+			Standard:   'bg-emerald-100 text-emerald-800',
+			Advance:    'bg-amber-100 text-amber-800',
+			Additional: 'bg-sky-100 text-sky-800',
+			Unpaid:     'bg-gray-100 text-gray-600',
+		};
+		const key = Object.keys(colorMap).find(k => String(params.value).startsWith(k));
+		return (
+			<span className={`px-2 py-1 rounded-full text-xs font-medium ${colorMap[key] || 'bg-gray-100 text-gray-800'}`}>
+				{params.value}
+			</span>
+		);
+	};
+
 	const pinnedCellStyle = (base = {}) => (p) =>
 		p.node.rowPinned ? { fontWeight: 'bold', backgroundColor: '#f3f4f6', ...base } : (base.default || null);
 
 	const columnDefs = useMemo(() => [
 		{ headerName: 'Date',        field: 'date',             filter: 'agDateColumnFilter',   sortable: true, width: 120, pinned:"left", valueFormatter: formatDateGrid, sort: 'desc', cellStyle: pinnedCellStyle() },
 		{ headerName: 'Type',        field: 'transaction_type', filter: 'agSetColumnFilter',    sortable: true, width: 110, cellRenderer: TypeBadge, cellStyle: pinnedCellStyle() },
+		{ headerName: 'Payment',     field: 'payment_mode',     filter: 'agSetColumnFilter',    sortable: true, width: 130, cellRenderer: PaymentBadge, cellStyle: pinnedCellStyle() },
 		{ headerName: 'Site',        field: 'site_name',        filter: 'agTextColumnFilter',   sortable: true, width: 160, cellStyle: pinnedCellStyle() },
 		{ headerName: 'Item/Labour', field: 'item_name',        filter: 'agTextColumnFilter',   sortable: true, width: 150, cellStyle: pinnedCellStyle() },
 		{
@@ -950,50 +967,52 @@ function Dashboard() {
 					</div>
 				</div>
 
-				{/* ── Vendor Summary Table ── */}
-				<div className="mt-8">
-					<div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-						<div>
-							<h2 className="text-xl font-bold">Vendor Summary</h2>
-							<p className="text-sm text-gray-600 mt-1">Outstanding balances and payment actions, by vendor</p>
-						</div>
-						<div className="flex gap-2">
-							<div className="relative">
-								<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-								<input
-									type="text"
-									value={vendorSummarySearch}
-									onChange={onVendorSummarySearchChange}
-									placeholder="Search vendor..."
-									className="pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-48"
-								/>
+				{/* ── Vendor Summary Table (all-sites view only — hidden when a specific site is selected) ── */}
+				{!selectedSite && (
+					<div className="mt-8">
+						<div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+							<div>
+								<h2 className="text-xl font-bold">Vendor Summary</h2>
+								<p className="text-sm text-gray-600 mt-1">Outstanding balances and payment actions, by vendor</p>
 							</div>
-							<ThemeUI.Button
-								onClick={exportVendorSummaryToCSV}
-								gradientColors={{ start: theme.primaryGradientStart, end: theme.primaryGradientEnd }}
-								direction={theme.gradientDirection}
-							>
-								<Download className="h-4 w-4 me-2" /> Export
-							</ThemeUI.Button>
+							<div className="flex gap-2">
+								<div className="relative">
+									<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+									<input
+										type="text"
+										value={vendorSummarySearch}
+										onChange={onVendorSummarySearchChange}
+										placeholder="Search vendor..."
+										className="pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-48"
+									/>
+								</div>
+								<ThemeUI.Button
+									onClick={exportVendorSummaryToCSV}
+									gradientColors={{ start: theme.primaryGradientStart, end: theme.primaryGradientEnd }}
+									direction={theme.gradientDirection}
+								>
+									<Download className="h-4 w-4 me-2" /> Export
+								</ThemeUI.Button>
+							</div>
+						</div>
+						<div style={headerGradientStyle}>
+							<AgGridReact
+								className="custom-ag-grid"
+								domLayout="autoHeight"
+								theme={themeQuartz.withParams(gridThemeBase)}
+								defaultColDef={{ resizable: true, sortable: true, filter: false }}
+								rowData={filteredVendorSummary}
+								columnDefs={vendorSummaryColumnDefs}
+								rowHeight={56}
+								pagination={true}
+								paginationPageSize={10}
+								paginationPageSizeSelector={[10, 20, 50]}
+								onGridReady={onVendorSummaryGridReady}
+								overlayNoRowsTemplate={'<span class="text-sm text-gray-500">No vendor activity yet</span>'}
+							/>
 						</div>
 					</div>
-					<div style={headerGradientStyle}>
-						<AgGridReact
-							className="custom-ag-grid"
-							domLayout="autoHeight"
-							theme={themeQuartz.withParams(gridThemeBase)}
-							defaultColDef={{ resizable: true, sortable: true, filter: false }}
-							rowData={filteredVendorSummary}
-							columnDefs={vendorSummaryColumnDefs}
-							rowHeight={56}
-							pagination={true}
-							paginationPageSize={10}
-							paginationPageSizeSelector={[10, 20, 50]}
-							onGridReady={onVendorSummaryGridReady}
-							overlayNoRowsTemplate={'<span class="text-sm text-gray-500">No vendor activity yet</span>'}
-						/>
-					</div>
-				</div>
+				)}
 
 				{/* ── Transaction Table (site-specific) ── */}
 				{selectedSite && (
@@ -1063,7 +1082,7 @@ function Dashboard() {
 								paginationPageSizeSelector={[10, 20, 50, 100]}
 								onGridReady={onGridReady}
 								pinnedBottomRowData={[{
-									date: '', transaction_type: '', site_name: '', item_name: '',
+									date: '', transaction_type: '', payment_mode: '', site_name: '', item_name: '',
 									quantity: '', rate: '',
 									total_amount: filteredTransactionTotals.total_amount,
 									amount:       filteredTransactionTotals.amount,

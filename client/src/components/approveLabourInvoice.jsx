@@ -14,11 +14,8 @@ import NoRowsOverlay from "./noRowsOverlay"
 // ─── Approve Invoice Modal ───────────────────────────────────────────────────
 function ApproveInvoiceModal({ isOpen, onClose, invoice, onApproved, theme }) {
     const [itemRates, setItemRates] = useState([])
-    const [credit, setCredit] = useState("")
-    const [debit, setDebit] = useState("")
     const [isLoading, setIsLoading] = useState(false)
     const [errors, setErrors] = useState({})
-    const isUpdatingRef = useRef(false)
 
     const items = invoice?.items || []
 
@@ -30,8 +27,6 @@ function ApproveInvoiceModal({ isOpen, onClose, invoice, onApproved, theme }) {
                 rate_per_worker: item.labour?.standard_rate ? String(item.labour.standard_rate) : "",
             }))
             setItemRates(rates)
-            setCredit("")
-            setDebit("")
             setErrors({})
         }
     }, [isOpen, invoice])
@@ -49,38 +44,6 @@ function ApproveInvoiceModal({ isOpen, onClose, invoice, onApproved, theme }) {
         return parseFloat(lineTotals.reduce((sum, lt) => sum + lt, 0).toFixed(2))
     }, [lineTotals])
 
-    // Auto-calculate debit/credit using isUpdatingRef pattern
-    useEffect(() => {
-        if (isUpdatingRef.current) return
-
-        if (totalAmount === 0) {
-            setCredit("")
-            setDebit("")
-            return
-        }
-
-        const creditVal = Number(credit) || 0
-        const debitVal = Number(debit) || 0
-
-        isUpdatingRef.current = true
-
-        if (credit !== "" && creditVal >= 0 && creditVal <= totalAmount) {
-            const calculatedDebit = totalAmount - creditVal
-            if (Math.abs(calculatedDebit - debitVal) > 0.01) {
-                setDebit(calculatedDebit >= 0 ? calculatedDebit.toFixed(2) : "0.00")
-            }
-        } else if (debit !== "" && debitVal >= 0 && debitVal <= totalAmount) {
-            const calculatedCredit = totalAmount - debitVal
-            if (Math.abs(calculatedCredit - creditVal) > 0.01) {
-                setCredit(calculatedCredit >= 0 ? calculatedCredit.toFixed(2) : "0.00")
-            }
-        }
-
-        setTimeout(() => {
-            isUpdatingRef.current = false
-        }, 100)
-    }, [credit, debit, totalAmount])
-
     const handleRateChange = (idx, value) => {
         setItemRates(prev => {
             const updated = [...prev]
@@ -88,34 +51,6 @@ function ApproveInvoiceModal({ isOpen, onClose, invoice, onApproved, theme }) {
             return updated
         })
         setErrors(prev => ({ ...prev, [`item_rate_${idx}`]: "" }))
-    }
-
-    const handleCreditChange = (e) => {
-        const v = e.target.value
-        isUpdatingRef.current = true
-        setCredit(v)
-        setErrors(prev => ({ ...prev, credit_entry: "" }))
-        if (v !== "" && !isNaN(v) && totalAmount > 0) {
-            const calc = totalAmount - Number(v)
-            setDebit(calc >= 0 ? calc.toFixed(2) : "0.00")
-        } else {
-            setDebit("")
-        }
-        setTimeout(() => { isUpdatingRef.current = false }, 100)
-    }
-
-    const handleDebitChange = (e) => {
-        const v = e.target.value
-        isUpdatingRef.current = true
-        setDebit(v)
-        setErrors(prev => ({ ...prev, debit_entry: "" }))
-        if (v !== "" && !isNaN(v) && totalAmount > 0) {
-            const calc = totalAmount - Number(v)
-            setCredit(calc >= 0 ? calc.toFixed(2) : "0.00")
-        } else {
-            setCredit("")
-        }
-        setTimeout(() => { isUpdatingRef.current = false }, 100)
     }
 
     const handleApprove = async () => {
@@ -128,12 +63,6 @@ function ApproveInvoiceModal({ isOpen, onClose, invoice, onApproved, theme }) {
             }
         })
 
-        // Validate paid + due = total
-        const sum = Number(credit || 0) + Number(debit || 0)
-        if (totalAmount > 0 && Math.abs(sum - totalAmount) > 0.01) {
-            newErrors.debit_entry = `Paid + Due must equal \u20B9${totalAmount.toFixed(2)}`
-        }
-
         if (Object.keys(newErrors).length > 0) { setErrors(newErrors); return }
 
         setIsLoading(true)
@@ -143,8 +72,10 @@ function ApproveInvoiceModal({ isOpen, onClose, invoice, onApproved, theme }) {
                     item_id: ir.item_id,
                     rate_per_worker: Number(ir.rate_per_worker),
                 })),
-                credit_entry: Number(credit || 0),
-                debit_entry: Number(debit || 0),
+                // Paid/Due are no longer entered here — an approved invoice starts fully Due.
+                // Payments are recorded afterwards from Vendor Summary.
+                credit_entry: 0,
+                debit_entry: totalAmount,
             })
             if (response.data.success) {
                 toast.success("Labour invoice approved successfully")
@@ -218,87 +149,6 @@ function ApproveInvoiceModal({ isOpen, onClose, invoice, onApproved, theme }) {
                         <span>Total Amount:</span>
                         <span className="text-blue-700">{"\u20B9"}{totalAmount.toFixed(2)}</span>
                     </div>
-                )}
-
-                {/* Paid & Due with full-payment checkboxes */}
-                <div className="grid grid-cols-2 gap-4">
-                    {/* Paid */}
-                    <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                            <label className="block text-sm font-medium text-gray-700">Paid {"\u20B9"}</label>
-                            <ThemeUI.Checkbox
-                                id="approve_paid_checkbox"
-                                checked={credit === totalAmount.toFixed(2) && totalAmount > 0}
-                                onChange={e => {
-                                    isUpdatingRef.current = true
-                                    if (e.target.checked) {
-                                        setCredit(totalAmount.toFixed(2))
-                                        setDebit("0.00")
-                                    } else {
-                                        setCredit("")
-                                        setDebit("")
-                                    }
-                                    setErrors(prev => ({ ...prev, credit_entry: "", debit_entry: "" }))
-                                    setTimeout(() => { isUpdatingRef.current = false }, 100)
-                                }}
-                                disabled={totalAmount === 0}
-                            />
-                        </div>
-                        <ThemeUI.Input
-                            type="number" step="0.01" min="0" max={totalAmount}
-                            value={credit}
-                            onChange={handleCreditChange}
-                            placeholder="0.00"
-                            disabled={totalAmount === 0}
-                            error={errors.credit_entry}
-                        />
-                        {errors.credit_entry && (
-                            <p className="mt-1 text-xs text-red-500">{errors.credit_entry}</p>
-                        )}
-                    </div>
-
-                    {/* Due */}
-                    <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                            <label className="block text-sm font-medium text-gray-700">Due {"\u20B9"}</label>
-                            <ThemeUI.Checkbox
-                                id="approve_due_checkbox"
-                                checked={debit === totalAmount.toFixed(2) && totalAmount > 0}
-                                onChange={e => {
-                                    isUpdatingRef.current = true
-                                    if (e.target.checked) {
-                                        setDebit(totalAmount.toFixed(2))
-                                        setCredit("0.00")
-                                    } else {
-                                        setDebit("")
-                                        setCredit("")
-                                    }
-                                    setErrors(prev => ({ ...prev, debit_entry: "", credit_entry: "" }))
-                                    setTimeout(() => { isUpdatingRef.current = false }, 100)
-                                }}
-                                disabled={totalAmount === 0}
-                            />
-                        </div>
-                        <ThemeUI.Input
-                            type="number" step="0.01" min="0" max={totalAmount}
-                            value={debit}
-                            onChange={handleDebitChange}
-                            placeholder="0.00"
-                            disabled={totalAmount === 0}
-                            error={errors.debit_entry}
-                        />
-                        {errors.debit_entry && (
-                            <p className="mt-1 text-xs text-red-500">{errors.debit_entry}</p>
-                        )}
-                    </div>
-                </div>
-
-                {/* Mismatch warning */}
-                {totalAmount > 0 && credit !== "" && debit !== "" &&
-                 Math.abs((Number(credit) + Number(debit)) - totalAmount) > 0.01 && (
-                    <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
-                        {"\u26A0"} Paid + Due ({"\u20B9"}{(Number(credit) + Number(debit)).toFixed(2)}) must equal Total ({"\u20B9"}{totalAmount.toFixed(2)})
-                    </p>
                 )}
 
                 <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">

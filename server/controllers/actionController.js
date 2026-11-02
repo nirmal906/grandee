@@ -493,6 +493,22 @@ const actionController = {
     },
 
     getTransactions: async (req, res) => {
+        // Classify how an invoice was paid so Recent Transactions can log
+        // Standard vs Advance/Additional payments site-wise:
+        //  - Advance/Additional: system-generated split-payment invoices, one per
+        //    allocated active site, tagged "Payment Mode: ..." in their notes.
+        //  - Standard: a regular invoice that has received payment (paid > 0).
+        const classifyPayment = (notes, paidAmount) => {
+            const m = /Payment Mode:\s*([^|]+)/i.exec(notes || '');
+            if (m) {
+                const modes = [];
+                if (/advance/i.test(m[1]))    modes.push('Advance');
+                if (/additional/i.test(m[1])) modes.push('Additional');
+                if (modes.length) return modes.join(' + ');
+            }
+            return paidAmount > 0 ? 'Standard' : 'Unpaid';
+        };
+
         try {
             const { from_date, to_date, site_id, type } = req.query;
 
@@ -527,6 +543,7 @@ const actionController = {
                         id:                 `M-${inv.id}`,
                         date:               inv.date,
                         transaction_type:   'Material',
+                        payment_mode:       classifyPayment(inv.notes, paidAmount),
                         entry_type:         null,
                         site_name:          inv.site?.name   || 'N/A',
                         item_name:          inv.invoice_number || `Invoice #${inv.id}`,
@@ -563,6 +580,7 @@ const actionController = {
                         id:                 `L-${inv.id}`,
                         date:               inv.date,
                         transaction_type:   'Labour',
+                        payment_mode:       classifyPayment(inv.notes, paidAmount),
                         entry_type:         null,
                         site_name:          inv.site?.name   || 'N/A',
                         item_name:          inv.invoice_number || `Invoice #${inv.id}`,
