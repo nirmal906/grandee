@@ -52,6 +52,13 @@ function VendorSummary() {
     // Payment modal — tab (standard payoff vs. advance/additional split payment)
     const [paymentTab, setPaymentTab] = useState('standard') // 'standard' | 'split'
 
+    // Standard payment — how the amount is applied to outstanding invoices
+    const [payMode,                setPayMode]                = useState('auto') // 'auto' (oldest first) | 'invoices' (split by invoice)
+    const [pendingInvoices,        setPendingInvoices]        = useState([])
+    const [pendingInvoicesLoading, setPendingInvoicesLoading] = useState(false)
+    const [invoiceIncluded,        setInvoiceIncluded]        = useState({}) // { [key]: boolean }
+    const [invoiceAllocations,     setInvoiceAllocations]     = useState({}) // { [key]: amountString }
+
     // Split payment (Advance / Additional Payment)
     const [activeSites,        setActiveSites]        = useState([])
     const [activeSitesLoading, setActiveSitesLoading]  = useState(false)
@@ -206,12 +213,101 @@ function VendorSummary() {
         }
     }, [])
 
+    // Outstanding invoices (material + labour) for the Standard Payment "split by invoice" mode
+    const invoiceKey = (inv) => `${inv.type}-${inv.id}`
+
+    const fetchPendingInvoicesForPayment = async (vendorId) => {
+        setPendingInvoicesLoading(true)
+        try {
+            const res = await axios.get(`/api/vendor-summary/${vendorId}/pending-invoices`)
+            if (res.data.success) {
+                // oldest first, so auto-fill clears the oldest dues first
+                const list = (res.data.data || []).slice().sort((a, b) => new Date(a.date) - new Date(b.date) || a.id - b.id)
+                setPendingInvoices(list)
+            }
+        } catch (err) {
+            console.error('Error fetching pending invoices:', err)
+            toast.error(err.response?.data?.message || 'Failed to load pending invoices')
+            setPendingInvoices([])
+        } finally {
+            setPendingInvoicesLoading(false)
+        }
+    }
+
+    const toggleInvoiceIncluded = (inv) => {
+        const key = invoiceKey(inv)
+        const due = Number(inv.debit_entry) || 0
+        const turningOn = !invoiceIncluded[key]
+        setInvoiceIncluded(prev => ({ ...prev, [key]: turningOn }))
+        if (turningOn) {
+            // Pre-fill with whatever is still unallocated (capped at this invoice's due)
+            const amt = Number(paymentAmount) || 0
+            const alreadyAllocated = pendingInvoices.reduce((sum, i) => {
+                const k = invoiceKey(i)
+                return invoiceIncluded[k] ? sum + (Number(invoiceAllocations[k]) || 0) : sum
+            }, 0)
+            const left = amt > 0 ? Math.max(amt - alreadyAllocated, 0) : due
+            const fill = parseFloat(Math.min(due, left).toFixed(2))
+            setInvoiceAllocations(prev => ({ ...prev, [key]: fill > 0 ? String(fill) : '' }))
+        } else {
+            setInvoiceAllocations(prev => ({ ...prev, [key]: '' }))
+        }
+    }
+
+    const updateInvoiceAllocation = (key, value) => {
+        setInvoiceAllocations(prev => ({ ...prev, [key]: value }))
+    }
+
+    // Distribute the payment amount over invoices, oldest first
+    const autoFillInvoiceAllocations = () => {
+        let left = Number(paymentAmount) || 0
+        if (left <= 0) {
+            toast.error('Enter the payment amount first')
+            return
+        }
+        const included = {}
+        const allocations = {}
+        pendingInvoices.forEach(inv => {
+            const key = invoiceKey(inv)
+            const due = Number(inv.debit_entry) || 0
+            const apply = parseFloat(Math.min(due, left).toFixed(2))
+            if (apply > 0) {
+                included[key] = true
+                allocations[key] = String(apply)
+                left = parseFloat((left - apply).toFixed(2))
+            }
+        })
+        setInvoiceIncluded(included)
+        setInvoiceAllocations(allocations)
+    }
+
+    const invoiceTotalAllocated = useMemo(() => {
+        return pendingInvoices.reduce((sum, inv) => {
+            const key = invoiceKey(inv)
+            if (!invoiceIncluded[key]) return sum
+            const val = Number(invoiceAllocations[key])
+            return sum + (isNaN(val) ? 0 : val)
+        }, 0)
+    }, [pendingInvoices, invoiceIncluded, invoiceAllocations])
+
+    const invoiceRemaining = useMemo(() => {
+        const amt = Number(paymentAmount) || 0
+        return parseFloat((amt - invoiceTotalAllocated).toFixed(2))
+    }, [paymentAmount, invoiceTotalAllocated])
+
     const openPaymentModal = (vendor) => {
         const hasOutstanding = Number(vendor.total_balance) > 0
 
         setPaymentVendor(vendor)
         setPaymentAmount('')
         setPaymentTab(hasOutstanding ? 'standard' : 'split')
+
+        // Reset standard-payment invoice split
+        setPayMode('auto')
+        setPendingInvoices([])
+        setInvoiceIncluded({})
+        setInvoiceAllocations({})
+        if (hasOutstanding) fetchPendingInvoicesForPayment(vendor.vendor_id)
 
         // Reset split-payment state for a clean modal every time it opens
         setSplitPaymentTypes([])
@@ -233,10 +329,40 @@ function VendorSummary() {
             toast.error('Please enter a valid payment amount')
             return
         }
+
+        // Split by invoice — build per-invoice allocations
+        let allocations
+        if (payMode === 'invoices') {
+            allocations = pendingInvoices
+                .filter(inv => invoiceIncluded[invoiceKey(inv)])
+                .map(inv => ({
+                    invoice_id: inv.id,
+                    invoice_type: inv.type,
+                    amount: Number(invoiceAllocations[invoiceKey(inv)]),
+                    due: Number(inv.debit_entry) || 0,
+                }))
+                .filter(a => !isNaN(a.amount) && a.amount > 0)
+
+            if (allocations.length === 0) {
+                toast.error('Allocate the payment amount to at least one invoice')
+                return
+            }
+            if (allocations.some(a => a.amount > a.due + 0.01)) {
+                toast.error('An allocation is higher than that invoice\'s due amount')
+                return
+            }
+            if (Math.abs(invoiceRemaining) > 0.01) {
+                toast.error('Total allocated must equal the payment amount before proceeding')
+                return
+            }
+            allocations = allocations.map(({ invoice_id, invoice_type, amount }) => ({ invoice_id, invoice_type, amount }))
+        }
+
         setPaymentLoading(true)
         try {
             const res = await axios.post(`/api/vendor-summary/${paymentVendor.vendor_id}/payment`, {
                 payment_amount: paymentAmount,
+                ...(allocations ? { allocations } : {}),
             })
             if (res.data.success) {
                 toast.success(res.data.message)
@@ -945,7 +1071,7 @@ function VendorSummary() {
                         isOpen={paymentModalOpen}
                         onClose={() => setPaymentModalOpen(false)}
                         title={`Make Payment — ${paymentVendor.vendor_name}`}
-                        size={paymentTab === 'split' ? 'xl' : 'md'}
+                        size={paymentTab === 'split' || (paymentTab === 'standard' && payMode === 'invoices') ? 'xl' : 'md'}
                     >
                         <div className="space-y-4">
                             <div className="rounded-lg bg-gray-50 border border-gray-200 px-4 py-3 flex justify-between items-center">
@@ -996,6 +1122,137 @@ function VendorSummary() {
                                             placeholder="0.00"
                                         />
                                     </ThemeUI.FormField>
+
+                                    {/* Apply payment: oldest-first (automatic) or split across chosen invoices */}
+                                    <div>
+                                        <div className="text-sm font-medium text-gray-700 mb-2">Apply Payment To</div>
+                                        <div className="flex flex-wrap gap-5">
+                                            {[
+                                                { key: 'auto',     label: 'Oldest invoices first (automatic)' },
+                                                { key: 'invoices', label: 'Split by invoice' },
+                                            ].map(opt => (
+                                                <label key={opt.key} className="flex items-center gap-2 cursor-pointer">
+                                                    <input
+                                                        type="radio"
+                                                        name="pay-mode"
+                                                        id={`pay-mode-${opt.key}`}
+                                                        checked={payMode === opt.key}
+                                                        onChange={() => setPayMode(opt.key)}
+                                                    />
+                                                    <span className="text-sm text-gray-800">{opt.label}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {payMode === 'invoices' && (
+                                        <div>
+                                            <div className="flex items-center justify-between mb-2">
+                                                <div className="text-sm font-medium text-gray-700">
+                                                    Split Payment Amount ({formatCurrency(paymentAmount || 0)}) to Invoices
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={autoFillInvoiceAllocations}
+                                                    className="text-xs font-medium px-2.5 py-1 rounded-lg transition-colors"
+                                                    style={{ color: theme.primaryGradientStart, backgroundColor: `${theme.primaryGradientStart}15` }}
+                                                >
+                                                    Auto-fill oldest first
+                                                </button>
+                                            </div>
+
+                                            {pendingInvoicesLoading ? (
+                                                <div className="flex items-center justify-center py-6 text-sm text-gray-500 gap-2">
+                                                    <Loader size={16} className="animate-spin" /> Loading pending invoices...
+                                                </div>
+                                            ) : pendingInvoices.length === 0 ? (
+                                                <div className="text-sm text-gray-500 py-4 text-center">No pending invoices found</div>
+                                            ) : (
+                                                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                                                    <div className="hidden sm:flex items-center gap-3 px-3 py-2 bg-gray-50 text-xs font-medium text-gray-500 border-b border-gray-200">
+                                                        <span className="w-5" />
+                                                        <span className="w-32">Invoice #</span>
+                                                        <span className="w-20">Type</span>
+                                                        <span className="flex-1">Site</span>
+                                                        <span className="w-24">Date</span>
+                                                        <span className="w-24 text-right">Due</span>
+                                                        <span className="w-32">Pay (₹)</span>
+                                                    </div>
+                                                    <div className="max-h-64 overflow-y-auto divide-y divide-gray-100">
+                                                        {pendingInvoices.map(inv => {
+                                                            const key = invoiceKey(inv)
+                                                            const included = !!invoiceIncluded[key]
+                                                            const due = Number(inv.debit_entry) || 0
+                                                            const overDue = included && (Number(invoiceAllocations[key]) || 0) > due + 0.01
+                                                            return (
+                                                                <div key={key} className="flex flex-wrap sm:flex-nowrap items-center gap-3 px-3 py-2.5">
+                                                                    <ThemeUI.Checkbox
+                                                                        id={`pay-invoice-${key}`}
+                                                                        name={`pay-invoice-${key}`}
+                                                                        checked={included}
+                                                                        onChange={() => toggleInvoiceIncluded(inv)}
+                                                                    />
+                                                                    <span className="w-32 text-sm text-gray-800 truncate">{inv.invoice_number || `#${inv.id}`}</span>
+                                                                    <span className="w-20">
+                                                                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${inv.type === 'material' ? "bg-blue-100 text-blue-800" : "bg-purple-100 text-purple-800"}`}>
+                                                                            {inv.typelabel}
+                                                                        </span>
+                                                                    </span>
+                                                                    <span className="flex-1 min-w-[6rem] text-sm text-gray-700 truncate">{inv.site?.name || '—'}</span>
+                                                                    <span className="w-24 text-xs text-gray-500">{inv.date ? new Date(inv.date).toLocaleDateString() : '—'}</span>
+                                                                    <span className="w-24 text-sm text-right font-medium text-red-600">{formatCurrency(due)}</span>
+                                                                    <div className="w-32">
+                                                                        <ThemeUI.Input
+                                                                            type="number"
+                                                                            step="0.01"
+                                                                            min="0"
+                                                                            max={due}
+                                                                            placeholder="0.00"
+                                                                            value={invoiceAllocations[key] || ''}
+                                                                            onChange={(e) => updateInvoiceAllocation(key, e.target.value)}
+                                                                            disabled={!included}
+                                                                            error={overDue ? 'Above due' : undefined}
+                                                                        />
+                                                                    </div>
+                                                                </div>
+                                                            )
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Allocation summary */}
+                                            <div className="mt-3 grid grid-cols-3 gap-3 text-center">
+                                                <div className="rounded-lg bg-gray-50 border border-gray-200 py-2">
+                                                    <div className="text-[11px] text-gray-500">Total Payment Amount</div>
+                                                    <div className="text-sm font-semibold text-gray-800">{formatCurrency(paymentAmount || 0)}</div>
+                                                </div>
+                                                <div className="rounded-lg bg-gray-50 border border-gray-200 py-2">
+                                                    <div className="text-[11px] text-gray-500">Total Allocated</div>
+                                                    <div className="text-sm font-semibold text-gray-800">{formatCurrency(invoiceTotalAllocated)}</div>
+                                                </div>
+                                                <div className="rounded-lg bg-gray-50 border border-gray-200 py-2">
+                                                    <div className="text-[11px] text-gray-500">Remaining Amount</div>
+                                                    <div className={`text-sm font-semibold ${Math.abs(invoiceRemaining) > 0.01 ? "text-red-600" : "text-green-600"}`}>
+                                                        {formatCurrency(invoiceRemaining)}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {paymentAmount && (
+                                                <div className={`mt-3 flex items-center gap-2 text-xs rounded-md px-3 py-2 ${
+                                                    Math.abs(invoiceRemaining) > 0.01
+                                                        ? "bg-red-50 text-red-700 border border-red-100"
+                                                        : "bg-green-50 text-green-700 border border-green-100"
+                                                }`}>
+                                                    {Math.abs(invoiceRemaining) > 0.01
+                                                        ? <><AlertTriangle size={14} /> Total allocated does not match the payment amount.</>
+                                                        : <><CheckCircle2 size={14} /> Total allocation is equal to the payment amount.</>
+                                                    }
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
 
                                     <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
                                         <ThemeUI.Button

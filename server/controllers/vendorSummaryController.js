@@ -259,7 +259,7 @@ const vendorSummaryController = {
         const t = await Vendor.sequelize.transaction();
         try {
             const { vendorId } = req.params;
-            const { invoice_id, invoice_type, payment_amount } = req.body;
+            const { invoice_id, invoice_type, payment_amount, allocations } = req.body;
 
             if (!payment_amount) {
                 await t.rollback();
@@ -279,6 +279,92 @@ const vendorSummaryController = {
             }
 
             const updatedBy = req.user?.userId ?? req.user?.id;
+
+            // ── Split-by-invoice flow: payment divided across the invoices the user picked ──
+            //   Body: { payment_amount, allocations: [{ invoice_id, invoice_type, amount }, ...] }
+            //   Allocations must sum to payment_amount and none may exceed its invoice's due.
+            if (Array.isArray(allocations) && allocations.length > 0) {
+                const clean = allocations
+                    .map(a => ({
+                        invoice_id:   a.invoice_id,
+                        invoice_type: a.invoice_type === 'labour' ? 'labour' : 'material',
+                        amount:       parseFloat(a.amount),
+                    }))
+                    .filter(a => a.invoice_id && !isNaN(a.amount) && a.amount > 0);
+
+                if (clean.length === 0) {
+                    await t.rollback();
+                    return res.status(400).json({ success: false, message: 'Allocate the payment amount to at least one invoice' });
+                }
+
+                const seen = new Set();
+                for (const a of clean) {
+                    const key = `${a.invoice_type}-${a.invoice_id}`;
+                    if (seen.has(key)) {
+                        await t.rollback();
+                        return res.status(400).json({ success: false, message: 'An invoice can only be allocated once' });
+                    }
+                    seen.add(key);
+                }
+
+                const totalAllocated = parseFloat(clean.reduce((sum, a) => sum + a.amount, 0).toFixed(2));
+                if (Math.abs(totalAllocated - amount) > 0.01) {
+                    await t.rollback();
+                    return res.status(400).json({
+                        success: false,
+                        message: `Total allocated (₹${totalAllocated.toFixed(2)}) must equal the payment amount (₹${amount.toFixed(2)})`
+                    });
+                }
+
+                const invoicesUpdated = [];
+                for (const a of clean) {
+                    const isLabour = a.invoice_type === 'labour';
+                    const Model = isLabour ? LabourInvoice : MaterialInvoice;
+                    const where = { id: a.invoice_id, vendor_id: vendorId, status: 1 };
+                    if (isLabour) where.approval_status = 'approved';
+
+                    const invoice = await Model.findOne({ where, transaction: t, lock: t.LOCK.UPDATE });
+                    if (!invoice) {
+                        await t.rollback();
+                        return res.status(404).json({ success: false, message: `Invoice ${a.invoice_id} not found for this vendor` });
+                    }
+
+                    const currentDebit  = parseFloat(invoice.debit_entry  || 0);
+                    const currentCredit = parseFloat(invoice.credit_entry || 0);
+
+                    if (a.amount > currentDebit + 0.01) {
+                        await t.rollback();
+                        return res.status(400).json({
+                            success: false,
+                            message: `Allocation (₹${a.amount.toFixed(2)}) exceeds the due amount (₹${currentDebit.toFixed(2)}) on invoice ${invoice.invoice_number || invoice.id}`
+                        });
+                    }
+
+                    const applied   = Math.min(a.amount, currentDebit);
+                    const newDebit  = parseFloat((currentDebit  - applied).toFixed(2));
+                    const newCredit = parseFloat((currentCredit + applied).toFixed(2));
+
+                    await invoice.update(
+                        { debit_entry: newDebit, credit_entry: newCredit, updated_by: updatedBy },
+                        { transaction: t }
+                    );
+
+                    invoicesUpdated.push({
+                        invoice_id:     invoice.id,
+                        invoice_number: invoice.invoice_number,
+                        invoice_type:   a.invoice_type,
+                        site_id:        invoice.site_id,
+                        applied:        parseFloat(applied.toFixed(2)),
+                    });
+                }
+
+                await t.commit();
+                return res.status(200).json({
+                    success: true,
+                    message: `Payment of ₹${amount.toFixed(2)} recorded across ${invoicesUpdated.length} invoice${invoicesUpdated.length > 1 ? 's' : ''}`,
+                    data: { vendor_id: vendorId, amount_paid: amount, invoices_updated: invoicesUpdated }
+                });
+            }
 
             // ── Legacy flow: payment applied to one specific invoice ──
             if (invoice_id) {
